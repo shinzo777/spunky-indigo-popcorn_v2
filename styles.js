@@ -33,6 +33,7 @@ export const getStyles = (t) =>
     headerSaveButton: { fontSize: 16, fontWeight: 'bold', color: t.primary },
     editButtonText: { fontSize: 15, color: t.primary, fontWeight: '600' },
     clearBoughtText: { fontSize: 13, color: t.primary, fontWeight: '600' },
+    clearAllText: { fontSize: 13, color: '#DC3545', fontWeight: '600' },
     // ★ 下部ボトムナビゲーションバー（5タブ固定）
     // ★ iOS / Android 両対応の下部ナビゲーションバー
     // ★ スマホ本体のナビゲーションバー（◀ ● ■）と重ならない設定
