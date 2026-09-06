@@ -17,12 +17,15 @@ export const categorizeIngredient = (text) => {
   return 'other';
 };
 
-// レシピ本文から材料行を自動抽出する関数
+// ★ カロリー・塩分・時間・分量見出しを買い物リストから完全除外する抽出関数
 export const extractIngredientsFromRecipeText = (text) => {
   if (!text) return [];
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   let inIngredients = false;
   const items = [];
+
+  // 除外したい単語のパターン（カロリー、塩分、時間、栄養、人数見出しなど）
+  const ignorePattern = /カロリー|kcal|塩分|調理時間|所要時間|目安時間|エネルギー|糖質|脂質|たんぱく質|タンパク質|費用|難易度|人分|人前|下準備|ポイント|memo|メモ/i;
 
   for (const line of lines) {
     if (/材料|【材料】|〔材料〕|＜材料＞/.test(line)) {
@@ -34,8 +37,12 @@ export const extractIngredientsFromRecipeText = (text) => {
       break;
     }
     if (inIngredients) {
+      // カロリー・塩分・見出し記号などを除外
+      if (ignorePattern.test(line)) continue;
+      if (/^[【〔＜\(\（\[].*?[】〕＞\)\）\]]$/.test(line)) continue; // 【タレ】などの見出し
+
       const cleaned = line.replace(/^[・\-\*•\d\.\s]+/, '').trim();
-      if (cleaned.length > 0 && !/^\(.*\)$|^（.*）$/.test(cleaned)) {
+      if (cleaned.length > 0) {
         items.push({
           id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           name: cleaned,
@@ -46,9 +53,11 @@ export const extractIngredientsFromRecipeText = (text) => {
     }
   }
 
+  // 見出しがない場合のフォールバック
   if (items.length === 0) {
     for (const line of lines) {
       if (/^[・\-\*]/.test(line)) {
+        if (ignorePattern.test(line)) continue;
         const cleaned = line.replace(/^[・\-\*•\s]+/, '').trim();
         if (cleaned.length > 0) {
           items.push({
