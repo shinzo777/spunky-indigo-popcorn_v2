@@ -102,3 +102,33 @@ export const getSeasonIcon = (month) => {
   if (month >= 9 && month <= 11) return '🍁'; // 秋 (9〜11月)
   return '❄️'; // 冬 (12〜2月)
 };
+// ★ スマホの高画質画像をFirestoreの1MB以内に自動圧縮する関数
+export const compressImageForFirestore = async (dataUri, maxDimension = 600, quality = 0.5) => {
+  if (!dataUri || typeof window === 'undefined') return dataUri;
+  if (!dataUri.startsWith('data:image')) return dataUri;
+
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      let w = img.width;
+      let h = img.height;
+      if (w > maxDimension || h > maxDimension) {
+        if (w > h) {
+          h = Math.round((h * maxDimension) / w);
+          w = maxDimension;
+        } else {
+          w = Math.round((w * maxDimension) / h);
+          h = maxDimension;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUri); // 万が一失敗しても止まらないようにする
+    img.src = dataUri;
+  });
+};

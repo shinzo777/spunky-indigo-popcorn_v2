@@ -40,6 +40,7 @@ import {
   extractIngredientsFromRecipeText,
   generateNewFamilyId,
   formatRelativeDate,
+  compressImageForFirestore,
 } from './helpers';
 
 import { getStyles } from './styles';
@@ -697,18 +698,24 @@ export default function App() {
     }
   };
 
-  const handleSave = async () => {
+const handleSave = async () => {
     if (!title.trim()) {
-      Alert.alert('入力エラー', '料理名を入力してください');
+      const msg = '料理名を入力してください';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('入力エラー', msg);
       return;
     }
     if (!firestoreFamilyApiUrl) {
-      Alert.alert('エラー', '家族グループIDが取得できていません');
+      const msg = '家族グループIDが取得できていません';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('エラー', msg);
       return;
     }
 
     const hasAnyRating = Object.values(familyRatings).some((v) => v > 0);
     const finalCookedState = isCookedState || hasAnyRating;
+
+    // ★ 保存直前に画像を確実に50KB程度に軽量化（1MBオーバーを完全に防止）
+    const cleanImageUri = await compressImageForFirestore(imageUri);
+    const cleanFoodImageUri = await compressImageForFirestore(foodImageUri);
 
     const payload = {
       title: title.trim(),
@@ -716,8 +723,8 @@ export default function App() {
       familyRatings: familyRatings || {},
       extractedText,
       notes,
-      imageUri: imageUri || null,
-      foodImageUri: foodImageUri || null,
+      imageUri: cleanImageUri || null,
+      foodImageUri: cleanFoodImageUri || null,
       webUrl: webUrl.trim(),
       updatedAt: new Date().toLocaleDateString('ja-JP'),
       isRequested: editingRecipeId ? (selectedRecipe?.isRequested || false) : false,
@@ -726,9 +733,10 @@ export default function App() {
     };
 
     try {
+      let res;
       if (editingRecipeId) {
         const updateUrl = `${firestoreFamilyApiUrl}/${editingRecipeId}?updateMask.fieldPaths=data`;
-        await fetch(updateUrl, {
+        res = await fetch(updateUrl, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -739,7 +747,7 @@ export default function App() {
         });
       } else {
         payload.createdAt = new Date().toLocaleDateString('ja-JP');
-        await fetch(firestoreFamilyApiUrl, {
+        res = await fetch(firestoreFamilyApiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -750,11 +758,18 @@ export default function App() {
         });
       }
 
+      // ★ サーバーがエラーを返した場合は理由を表示
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error?.message || `通信エラー (${res.status})`);
+      }
+
       await fetchRecipesFromCloud();
       resetForm();
       setActiveSubView(null);
     } catch (e) {
-      Alert.alert('保存エラー', e.message);
+      const msg = e.message;
+      Platform.OS === 'web' ? window.alert(`保存エラー: ${msg}`) : Alert.alert('保存エラー', msg);
     }
   };
 
