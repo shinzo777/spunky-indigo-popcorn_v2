@@ -72,6 +72,8 @@ export const CATEGORIES = [
   { key: '副菜', label: '副菜', icon: '🥗' },
   { key: '汁物', label: '汁物', icon: '🍲' },
   { key: '飯類', label: '飯類', icon: '🍚' },
+  { key: 'デザート', label: 'デザート', icon: '🍰' }, // ★ 追加
+  { key: '調味料', label: '調味料', icon: '🧂' },     // ★ 追加
   { key: '離乳食', label: '離乳食', icon: '🍼' },
   { key: 'その他', label: 'その他', icon: '🍽️' },
 ];
