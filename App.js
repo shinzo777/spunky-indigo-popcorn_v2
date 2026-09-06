@@ -180,6 +180,9 @@ export default function App() {
   }, [cloudRecipes, isShowDefaultRecipes]);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.documentElement.lang = 'ja';
+    }
     AsyncStorage.getItem('@setting_family_id').then((savedId) => {
       if (savedId) {
         setFamilyId(savedId);
@@ -788,51 +791,65 @@ const handleSave = async () => {
     setActiveSubView('edit');
   };
 
-  const handleResetDefaultRecipe = (recipeId) => {
-    Alert.alert(
-      '基本レシピのリセット',
-      'このレシピを初期状態（オリジナルの材料・手順・メモ）に戻しますか？',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        {
-          text: 'リセットする',
-          onPress: async () => {
-            try {
-              await fetch(`${firestoreFamilyApiUrl}/${recipeId}`, { method: 'DELETE' });
-              await fetchRecipesFromCloud();
-              resetForm();
-              setSelectedRecipe(null);
-              setActiveSubView(null);
-              Alert.alert('完了', '基本レシピを初期状態に戻しました');
-            } catch (e) {
-              Alert.alert('エラー', e.message);
-            }
-          },
-        },
-      ]
-    );
-  };
-
+// ★ 削除処理（Webでもスマホでも100%動作）
   const handleDeletePress = (recipeId) => {
     if (!firestoreFamilyApiUrl) return;
-    Alert.alert('レシピの削除', 'このレシピを削除してもよろしいですか？\n（同じ家族グループの全員から削除されます）', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await fetch(`${firestoreFamilyApiUrl}/${recipeId}`, { method: 'DELETE' });
-            await fetchRecipesFromCloud();
-            resetForm();
-            setSelectedRecipe(null);
-            setActiveSubView(null);
-          } catch (e) {
-            Alert.alert('削除エラー', e.message);
-          }
-        },
-      },
-    ]);
+
+    const executeDelete = async () => {
+      try {
+        const res = await fetch(`${firestoreFamilyApiUrl}/${recipeId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('削除リクエストに失敗しました');
+        await fetchRecipesFromCloud();
+        resetForm();
+        setSelectedRecipe(null);
+        setActiveSubView(null);
+      } catch (e) {
+        const msg = e.message;
+        Platform.OS === 'web' ? window.alert(`削除エラー: ${msg}`) : Alert.alert('削除エラー', msg);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('このレシピを削除してもよろしいですか？\n（同じ家族グループの全員から削除されます）')) {
+        executeDelete();
+      }
+    } else {
+      Alert.alert('レシピの削除', 'このレシピを削除してもよろしいですか？\n（同じ家族グループの全員から削除されます）', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: executeDelete },
+      ]);
+    }
+  };
+
+  // ★ 基本レシピのリセット処理（Web対応）
+  const handleResetDefaultRecipe = (recipeId) => {
+    if (!firestoreFamilyApiUrl) return;
+
+    const executeReset = async () => {
+      try {
+        await fetch(`${firestoreFamilyApiUrl}/${recipeId}`, { method: 'DELETE' });
+        await fetchRecipesFromCloud();
+        resetForm();
+        setSelectedRecipe(null);
+        setActiveSubView(null);
+        const msg = '基本レシピを初期状態に戻しました';
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('完了', msg);
+      } catch (e) {
+        const msg = e.message;
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('エラー', msg);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('このレシピを初期状態（オリジナルの材料・手順・メモ）に戻しますか？')) {
+        executeReset();
+      }
+    } else {
+      Alert.alert('基本レシピのリセット', 'このレシピを初期状態に戻しますか？', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'リセットする', onPress: executeReset },
+      ]);
+    }
   };
 
   const handleOpenWebPage = async (url) => {
@@ -849,12 +866,18 @@ const handleSave = async () => {
     }
   };
 
+// resetForm 内
   const resetForm = () => {
     setEditingRecipeId(null);
     setIsEditingDefault(false);
     setIsCookedState(false);
     setCategory('主菜');
-    setFamilyRatings({});
+// pickRecipeImage の中の setFamilyRatings 部分
+      const defaultRatings = {};
+      members.forEach((m) => {
+        defaultRatings[m.id] = 0; // ★ 星無し
+      });
+      setFamilyRatings(defaultRatings);
     setTitle('');
     setExtractedText('');
     setNotes('');
