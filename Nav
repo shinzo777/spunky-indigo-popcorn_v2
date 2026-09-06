@@ -46,14 +46,15 @@ import {
 
 import { getStyles } from './styles';
 
-// ★ 触るとパッと光り、離すとじわっとフェードアウトするタブボタン
-const NavTabButton = ({ tab, currentTab, onPress, styles }) => {
+// ★ NavTabButton 内のアイコン部分を Ionicons に差し替え
+const NavTabButton = ({ tab, currentTab, onPress, styles, unboughtCount, theme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const isActive = currentTab === tab.key;
 
   const handlePressIn = () => {
     Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 50, // 触った瞬間にパッと色づく
+      duration: 50,
       useNativeDriver: false,
     }).start();
   };
@@ -61,13 +62,13 @@ const NavTabButton = ({ tab, currentTab, onPress, styles }) => {
   const handlePressOut = () => {
     Animated.timing(fadeAnim, {
       toValue: 0,
-      duration: 350, // ★ 0.35秒かけてじわっと綺麗に消える（フェードアウト）
+      duration: 350,
       useNativeDriver: false,
     }).start();
   };
 
   const backgroundColor = fadeAnim.interpolate({
-  inputRange: Array.of(0, 1),
+    inputRange: Array.of(0, 1),
     outputRange: ['rgba(211, 84, 0, 0)', 'rgba(211, 84, 0, 0.25)'],
   });
 
@@ -79,22 +80,26 @@ const NavTabButton = ({ tab, currentTab, onPress, styles }) => {
       style={{ flex: 1 }}
     >
       <Animated.View style={[styles.navTabItem, { backgroundColor, borderRadius: 16 }]}>
-        <View>
-          <Text style={styles.navTabIcon}>{tab.icon}</Text>
-          {tab.badge > 0 ? (
+        <View style={{ position: 'relative' }}>
+          {/* ★ 絵文字ではなく Ionicons のベクターアイコンを参照 */}
+          <Ionicons
+            name={isActive ? tab.activeIconName : tab.iconName}
+            size={22}
+            color={isActive ? theme.primary : theme.textMuted}
+          />
+          {tab.key === 'shopping' && unboughtCount > 0 ? (
             <View style={styles.navBadge}>
-              <Text style={styles.navBadgeText}>{tab.badge}</Text>
+              <Text style={styles.navBadgeText}>{unboughtCount}</Text>
             </View>
           ) : null}
         </View>
-        <Text style={[styles.navTabLabel, currentTab === tab.key && styles.navTabLabelActive]}>
+        <Text style={[styles.navTabLabel, isActive && styles.navTabLabelActive]}>
           {tab.label}
         </Text>
       </Animated.View>
     </Pressable>
   );
 };
-
 export default function App() {
   const [cloudRecipes, setCloudRecipes] = useState([]);
   // ★ 下部5タブ: 'home' | 'recipes' | 'seasonal' | 'shopping' | 'settings'
@@ -2070,6 +2075,8 @@ const handleSave = async () => {
             currentTab={currentTab}
             onPress={() => setCurrentTab(tab.key)}
             styles={styles}
+            unboughtCount={unboughtCount}
+            theme={theme}
           />
         ))}
       </View>
