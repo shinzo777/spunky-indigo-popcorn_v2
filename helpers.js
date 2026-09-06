@@ -1,3 +1,4 @@
+import { Platform } from 'react-native'; // ★ この1行を先頭に追加
 // 食材キーワードによるスーパー売り場判定
 export const categorizeIngredient = (text) => {
   const t = text.toLowerCase();
