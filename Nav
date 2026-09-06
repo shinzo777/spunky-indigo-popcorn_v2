@@ -32,6 +32,7 @@ import {
   RATING_STARS,
   SHOPPING_AISLES,
   PRESET_DEFAULT_RECIPES,
+  NAV_ITEMS,
   getSeasonIcon
 } from './constants';
 
@@ -260,15 +261,37 @@ export default function App() {
     }
   };
 
-  const handleAddRecipeToShoppingList = (recipe) => {
+const handleAddRecipeToShoppingList = (recipe) => {
     const extracted = extractIngredientsFromRecipeText(recipe.extractedText);
     if (extracted.length === 0) {
-      Alert.alert('案内', 'レシピから材料が見つかりませんでした。');
+      const msg = 'レシピから材料が見つかりませんでした。';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('案内', msg);
       return;
     }
     const updated = [...shoppingList, ...extracted];
     saveShoppingList(updated);
-    Alert.alert('追加完了', `「${recipe.title}」の材料（${extracted.length}品）を買い物リストに追加しました！`);
+
+    // ★ Web/スマホ両対応の追加完了ポップアップ
+    const successMsg = `「${recipe.title}」の材料（${extracted.length}品）を買い物リストに追加しました！`;
+    Platform.OS === 'web' ? window.alert(successMsg) : Alert.alert('追加完了', successMsg);
+  };
+  // ★ 買い物リストの全消去（確認ダイアログ付き）
+  const handleClearAllShoppingList = () => {
+    if (shoppingList.length === 0) return;
+    const msg = '買い物リストの全アイテムを消去しますか？';
+
+    const executeClear = () => {
+      saveShoppingList([]);
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) executeClear();
+    } else {
+      Alert.alert('リスト全消去', msg, [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '全消去', style: 'destructive', onPress: executeClear },
+      ]);
+    }
   };
 
   const handleToggleShoppingItem = (id) => {
@@ -1727,15 +1750,19 @@ const handleSave = async () => {
       {currentTab === 'shopping' && (
         <View style={{ flex: 1 }}>
           <View style={styles.header}>
-            <View style={styles.headerSideArea} />
-            <Text style={styles.headerTitle}>🛒 買い物リスト</Text>
-            <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
-              {shoppingList.some((i) => i.checked) ? (
-                <TouchableOpacity onPress={handleClearBoughtItems}>
-                  <Text style={styles.clearBoughtText}>購入済クリア</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+{/* 買い物画面のヘッダー右側：購入済クリア ＆ 全消去ボタン */}
+          <View style={[styles.headerSideArea, { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'flex-end', gap: 10, width: 140 }]}>
+            {shoppingList.some((i) => i.checked) ? (
+              <TouchableOpacity onPress={handleClearBoughtItems}>
+                <Text style={styles.clearBoughtText}>購入済クリア</Text>
+              </TouchableOpacity>
+            ) : null}
+            {shoppingList.length > 0 ? (
+              <TouchableOpacity onPress={handleClearAllShoppingList}>
+                <Text style={styles.clearAllText}>全消去</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
           </View>
 
           <View style={styles.addShoppingBar}>
