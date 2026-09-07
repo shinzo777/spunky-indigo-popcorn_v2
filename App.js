@@ -49,6 +49,47 @@ import {
 
 import { getStyles } from './styles';
 
+// =============================================================
+// ★ 触感マイクロインタラクション（タップ時にほんの少しクニュッと沈み込む）
+// =============================================================
+const SpringCard = ({ children, onPress, style, ...props }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.975,
+      friction: 8,
+      tension: 100,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 5,
+      tension: 80,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+      {...props}
+    >
+      <Animated.View style={[style, { transform: [{ scale: scaleAnim }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+// =============================================================
+// ナビゲーションバーのフェードアウトボタン
+// =============================================================
 const NavTabButton = ({ tab, currentTab, onPress, styles, unboughtCount, theme }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const isActive = currentTab === tab.key;
@@ -71,7 +112,7 @@ const NavTabButton = ({ tab, currentTab, onPress, styles, unboughtCount, theme }
 
   const backgroundColor = fadeAnim.interpolate({
     inputRange: Array.of(0, 1),
-    outputRange: ['rgba(211, 84, 0, 0)', 'rgba(211, 84, 0, 0.25)'],
+    outputRange: ['rgba(200, 90, 23, 0)', 'rgba(200, 90, 23, 0.15)'],
   });
 
   return (
@@ -105,7 +146,15 @@ const NavTabButton = ({ tab, currentTab, onPress, styles, unboughtCount, theme }
 export default function App() {
   const [cloudRecipes, setCloudRecipes] = useState([]);
   const [currentTab, setCurrentTab] = useState('home');
-  const [activeSubView, setActiveSubView] = useState(null);
+  const [activeSubView, setActiveSubView] = useState(null); // null | 'detail' | 'edit'
+
+  // ★ シームレスなタブ遷移アニメーション
+  const tabFadeAnim = useRef(new Animated.Value(1)).current;
+  const tabTranslateY = useRef(new Animated.Value(0)).current;
+
+  // ★ サブ画面（詳細・編集）のシームレススライドインアニメーション
+  const subViewFadeAnim = useRef(new Animated.Value(0)).current;
+  const subViewSlideAnim = useRef(new Animated.Value(24)).current;
 
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -164,7 +213,6 @@ export default function App() {
     return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/recipes`;
   }, [familyId]);
 
-  // ★ 買い物リストのクラウド同期URL
   const firestoreShoppingApiUrl = useMemo(() => {
     if (!FIREBASE_PROJECT_ID || !familyId) return null;
     return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/shopping/list`;
@@ -179,6 +227,39 @@ export default function App() {
     cloudRecipes.forEach((r) => presetMap.set(r.id, r));
     return Array.from(presetMap.values());
   }, [cloudRecipes, isShowDefaultRecipes]);
+
+  // タブ切り替え時のなめらかアニメーション
+  const switchTabSmoothly = (newTab) => {
+    if (newTab === currentTab) return;
+    tabFadeAnim.setValue(0.3);
+    tabTranslateY.setValue(10);
+    setCurrentTab(newTab);
+    Animated.parallel([
+      Animated.timing(tabFadeAnim, { toValue: 1, duration: 220, useNativeDriver: false }),
+      Animated.timing(tabTranslateY, { toValue: 0, duration: 220, useNativeDriver: false }),
+    ]).start();
+  };
+
+  // サブ画面を開く（なめらかなスライドイン）
+  const openSubViewSmoothly = (viewName) => {
+    subViewFadeAnim.setValue(0);
+    subViewSlideAnim.setValue(24);
+    setActiveSubView(viewName);
+    Animated.parallel([
+      Animated.timing(subViewFadeAnim, { toValue: 1, duration: 250, useNativeDriver: false }),
+      Animated.timing(subViewSlideAnim, { toValue: 0, duration: 250, useNativeDriver: false }),
+    ]).start();
+  };
+
+  // サブ画面を閉じる（なめらかなスライドアウト）
+  const closeSubViewSmoothly = () => {
+    Animated.parallel([
+      Animated.timing(subViewFadeAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
+      Animated.timing(subViewSlideAnim, { toValue: 24, duration: 180, useNativeDriver: false }),
+    ]).start(() => {
+      setActiveSubView(null);
+    });
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setIsAppReady(true), 1200);
@@ -438,7 +519,7 @@ export default function App() {
       setFamilyId(input);
       setJoinFamilyInput('');
       setCloudRecipes([]);
-      setCurrentTab('recipes');
+      switchTabSmoothly('recipes');
       const sMsg = `家族グループ「${input}」に合流しました！`;
       Platform.OS === 'web' ? window.alert(sMsg) : Alert.alert('完了', sMsg);
     };
@@ -554,6 +635,7 @@ export default function App() {
   const handlePullToRefresh = async () => {
     setIsRefreshing(true);
     await fetchRecipesFromCloud();
+    await fetchShoppingListFromCloud();
     setIsRefreshing(false);
   };
 
@@ -709,7 +791,7 @@ export default function App() {
         defaultRatings[m.id] = 0;
       });
       setFamilyRatings(defaultRatings);
-      setActiveSubView('edit');
+      openSubViewSmoothly('edit');
 
       setIsLoading(true);
       setLoadingMessage('AIがレシピを文字起こし中...');
@@ -843,7 +925,7 @@ export default function App() {
 
       await fetchRecipesFromCloud();
       resetForm();
-      setActiveSubView(null);
+      closeSubViewSmoothly();
     } catch (e) {
       const msg = e.message;
       Platform.OS === 'web' ? window.alert(`保存エラー: ${msg}`) : Alert.alert('保存エラー', msg);
@@ -865,7 +947,7 @@ export default function App() {
     setImageUri(recipe.imageUri || null);
     setFoodImageUri(recipe.foodImageUri || null);
     setWebUrl(recipe.webUrl || '');
-    setActiveSubView('edit');
+    openSubViewSmoothly('edit');
   };
 
   const handleResetDefaultRecipe = (recipeId) => {
@@ -877,7 +959,7 @@ export default function App() {
         await fetchRecipesFromCloud();
         resetForm();
         setSelectedRecipe(null);
-        setActiveSubView(null);
+        closeSubViewSmoothly();
         const msg = '基本レシピを初期状態に戻しました';
         Platform.OS === 'web' ? window.alert(msg) : Alert.alert('完了', msg);
       } catch (e) {
@@ -908,7 +990,7 @@ export default function App() {
         await fetchRecipesFromCloud();
         resetForm();
         setSelectedRecipe(null);
-        setActiveSubView(null);
+        closeSubViewSmoothly();
       } catch (e) {
         const msg = e.message;
         Platform.OS === 'web' ? window.alert(`削除エラー: ${msg}`) : Alert.alert('削除エラー', msg);
@@ -970,20 +1052,23 @@ export default function App() {
 
   if (!isAppReady) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#F8EBD8', justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F8EBD8" />
+      <View style={{ flex: 1, backgroundColor: '#FAF6F0', justifyContent: 'center', alignItems: 'center' }}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FAF6F0" />
         <Image
           source={require('./assets/logo.png')}
           style={{ width: 180, height: 60, marginBottom: 12 }}
           resizeMode="contain"
         />
-        <Text style={{ fontSize: 13, color: '#5D4037', fontWeight: 'bold', letterSpacing: 2 }}>
+        <Text style={{ fontSize: 13, color: '#5C4033', fontWeight: 'bold', letterSpacing: 2 }}>
           わが家のレシピ帳
         </Text>
       </View>
     );
   }
 
+  // =============================================================
+  // サブ画面：詳細画面（シームレスアニメーション付き）
+  // =============================================================
   if (activeSubView === 'detail' && selectedRecipe) {
     const mainImage = selectedRecipe.foodImageUri || selectedRecipe.imageUri;
     const categoryIcon = getCategoryIcon(selectedRecipe.category);
@@ -997,160 +1082,187 @@ export default function App() {
         ? rawLines.slice(1)
         : rawLines;
 
+    // ★ 材料のみを安全に倍量計算（作り方・温度・時間は絶対に変えない）
     const scaleFactor = servingSize / 2;
-    const recipeLines = unscaledLines.map((line) => scaleIngredientLine(line, scaleFactor));
+    let inIngredients = false;
+
+    const recipeLines = unscaledLines.map((line) => {
+      if (/材料|【材料】|〔材料〕|＜材料＞/.test(line)) {
+        inIngredients = true;
+        return line.replace(/\d+\s*(?:人分|人前)/g, `${servingSize}人分`);
+      }
+      if (
+        /作り方|手順|【作り方】|〔作り方〕|＜作り方＞/.test(line) ||
+        /^\d+[\.\、\)]|^[①-⑳]/.test(line)
+      ) {
+        inIngredients = false;
+        return line;
+      }
+      if (inIngredients) {
+        return scaleIngredientLine(line, scaleFactor);
+      }
+      return line;
+    });
 
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle={theme.statusBar} backgroundColor={theme.headerBg} />
         
-        <View style={styles.header}>
-          <View style={styles.headerSideArea}>
-            <TouchableOpacity onPress={() => setActiveSubView(null)}>
-              <Text style={styles.headerButton}>‹ 戻る</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.headerTitle}>レシピ詳細</Text>
-
-          <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
-            <TouchableOpacity onPress={() => handleEditPress(selectedRecipe)}>
-              <Text style={styles.editButtonText}>編集</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 80 }}>
-          {mainImage && (
-            <Image source={{ uri: mainImage }} style={styles.detailImage} resizeMode="cover" />
-          )}
-
-          <View style={styles.detailTitleRow}>
-            <Text style={styles.detailTitle}>{selectedRecipe.title}</Text>
-          </View>
-
-          <View style={styles.detailTagsRow}>
-            {selectedRecipe.category ? (
-              <View style={styles.detailTag}>
-                <Text style={styles.detailTagText}>{categoryIcon} {selectedRecipe.category}</Text>
-              </View>
-            ) : null}
-            {selectedRecipe.cookingTime ? (
-              <View style={[styles.detailTag, { backgroundColor: '#FEF9E7', borderColor: '#F9E79F' }]}>
-                <Text style={[styles.detailTagText, { color: '#B7950B' }]}>⏱️ 約{selectedRecipe.cookingTime}分</Text>
-              </View>
-            ) : null}
-            {selectedRecipe.isBento ? (
-              <View style={[styles.detailTag, { backgroundColor: '#FDF2E9', borderColor: '#F5CBA7' }]}>
-                <Text style={[styles.detailTagText, { color: '#E67E22' }]}>🍱 お弁当OK</Text>
-              </View>
-            ) : null}
-            {selectedRecipe.isMealPrep ? (
-              <View style={[styles.detailTag, { backgroundColor: '#EBF5FB', borderColor: '#AED6F1' }]}>
-                <Text style={[styles.detailTagText, { color: '#2980B9' }]}>🧊 作り置きOK</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {isCookingModeEnabled ? (
-            <TouchableOpacity
-              style={[styles.bigCookStartBtn, isCookingMode && styles.bigCookStartBtnActive]}
-              onPress={toggleCookingMode}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.bigCookStartBtnText}>
-                {isCookingMode ? '🍳 調理終了（履歴に記録）' : '🍳 調理スタート（スリープ防止）'}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-
-          <View style={styles.smartActionBar}>
-            <TouchableOpacity
-              style={styles.smartActionBtn}
-              onPress={() => handleAddRecipeToShoppingList(selectedRecipe)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.smartActionBtnText}>🛒 買い物追加</Text>
-            </TouchableOpacity>
-
-            {isRequestEnabled ? (
-              <TouchableOpacity
-                style={[styles.smartActionBtn, selectedRecipe.isRequested && styles.smartActionBtnActiveRequest]}
-                onPress={() => handleToggleRequest(selectedRecipe)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.smartActionBtnText, selectedRecipe.isRequested && styles.smartActionBtnTextActive]}>
-                  {selectedRecipe.isRequested ? '😋 食べたい中' : '🙋 食べたい！'}
-                </Text>
+        <Animated.View
+          style={{
+            flex: 1,
+            opacity: subViewFadeAnim,
+            transform: [{ translateY: subViewSlideAnim }],
+          }}
+        >
+          <View style={styles.header}>
+            <View style={styles.headerSideArea}>
+              <TouchableOpacity onPress={closeSubViewSmoothly}>
+                <Text style={styles.headerButton}>‹ 戻る</Text>
               </TouchableOpacity>
+            </View>
+
+            <Text style={styles.headerTitle}>レシピ詳細</Text>
+
+            <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
+              <TouchableOpacity onPress={() => handleEditPress(selectedRecipe)}>
+                <Text style={styles.editButtonText}>編集</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 80 }}>
+            {mainImage && (
+              <Image source={{ uri: mainImage }} style={styles.detailImage} resizeMode="cover" />
+            )}
+
+            <View style={styles.detailTitleRow}>
+              <Text style={styles.detailTitle}>{selectedRecipe.title}</Text>
+            </View>
+
+            <View style={styles.detailTagsRow}>
+              {selectedRecipe.category ? (
+                <View style={styles.detailTag}>
+                  <Text style={styles.detailTagText}>{categoryIcon} {selectedRecipe.category}</Text>
+                </View>
+              ) : null}
+              {selectedRecipe.cookingTime ? (
+                <View style={[styles.detailTag, { backgroundColor: '#FEF9E7', borderColor: '#F9E79F' }]}>
+                  <Text style={[styles.detailTagText, { color: '#B7950B' }]}>⏱️ 約{selectedRecipe.cookingTime}分</Text>
+                </View>
+              ) : null}
+              {selectedRecipe.isBento ? (
+                <View style={[styles.detailTag, { backgroundColor: '#FDF2E9', borderColor: '#F5CBA7' }]}>
+                  <Text style={[styles.detailTagText, { color: '#C85A17' }]}>🍱 お弁当OK</Text>
+                </View>
+              ) : null}
+              {selectedRecipe.isMealPrep ? (
+                <View style={[styles.detailTag, { backgroundColor: '#EBF5FB', borderColor: '#AED6F1' }]}>
+                  <Text style={[styles.detailTagText, { color: '#3A7CA5' }]}>🧊 作り置きOK</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {isCookingModeEnabled ? (
+              <SpringCard
+                style={[styles.bigCookStartBtn, isCookingMode && styles.bigCookStartBtnActive]}
+                onPress={toggleCookingMode}
+              >
+                <Text style={styles.bigCookStartBtnText}>
+                  {isCookingMode ? '🍳 調理終了（履歴に記録）' : '🍳 調理スタート（スリープ防止）'}
+                </Text>
+              </SpringCard>
             ) : null}
-          </View>
 
-          {selectedRecipe.notes ? (
-            <View style={styles.noteSection}>
-              <Text style={styles.noteSectionHeader}>💡 わが家の味調整・メモ</Text>
-              <Text style={styles.noteText}>{selectedRecipe.notes}</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.noteSectionEmpty}
-              onPress={() => handleEditPress(selectedRecipe)}
-            >
-              <Text style={styles.noteTextEmpty}>💡 ＋ 味の調整や家族の感想をメモする</Text>
-            </TouchableOpacity>
-          )}
+            <View style={styles.smartActionBar}>
+              <SpringCard
+                style={styles.smartActionBtn}
+                onPress={() => handleAddRecipeToShoppingList(selectedRecipe)}
+              >
+                <Text style={styles.smartActionBtnText}>🛒 買い物追加</Text>
+              </SpringCard>
 
-          <View style={styles.servingContainer}>
-            <Text style={styles.servingLabel}>⚖️ 人数・分量計算</Text>
-            <View style={styles.servingChips}>
-              {Array.of(1, 2, 3, 4).map((size) => (
-                <TouchableOpacity
-                  key={size}
-                  style={[styles.servingChip, servingSize === size && styles.servingChipActive]}
-                  onPress={() => setServingSize(size)}
+              {isRequestEnabled ? (
+                <SpringCard
+                  style={[styles.smartActionBtn, selectedRecipe.isRequested && styles.smartActionBtnActiveRequest]}
+                  onPress={() => handleToggleRequest(selectedRecipe)}
                 >
-                  <Text style={[styles.servingChipText, servingSize === size && styles.servingChipTextActive]}>
-                    {size}人分{size === 2 ? '(標準)' : ''}
+                  <Text style={[styles.smartActionBtnText, selectedRecipe.isRequested && styles.smartActionBtnTextActive]}>
+                    {selectedRecipe.isRequested ? '😋 食べたい中' : '🙋 食べたい！'}
                   </Text>
-                </TouchableOpacity>
-              ))}
+                </SpringCard>
+              ) : null}
             </View>
-          </View>
 
-          <View style={styles.detailSection}>
-            <Text style={styles.sectionHeader}>📖 材料 ＆ 作り方 ({servingSize}人分)</Text>
+            {selectedRecipe.notes ? (
+              <View style={styles.noteSection}>
+                <Text style={styles.noteSectionHeader}>💡 わが家の味調整・メモ</Text>
+                <Text style={styles.noteText}>{selectedRecipe.notes}</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.noteSectionEmpty}
+                onPress={() => handleEditPress(selectedRecipe)}
+              >
+                <Text style={styles.noteTextEmpty}>💡 ＋ 味の調整や家族の感想をメモする</Text>
+              </TouchableOpacity>
+            )}
 
-            {isCookingModeEnabled && isCookingMode ? (
-              recipeLines.map((line, idx) => {
-                const isChecked = !!checkedLines[idx];
-                return (
+            <View style={styles.servingContainer}>
+              <Text style={styles.servingLabel}>⚖️ 人数・分量計算</Text>
+              <View style={styles.servingChips}>
+                {Array.of(1, 2, 3, 4).map((size) => (
                   <TouchableOpacity
-                    key={idx}
-                    activeOpacity={0.7}
-                    onPress={() => toggleLineCheck(idx)}
-                    style={[styles.recipeLineRow, isChecked && styles.recipeLineRowChecked]}
+                    key={size}
+                    style={[styles.servingChip, servingSize === size && styles.servingChipActive]}
+                    onPress={() => setServingSize(size)}
                   >
-                    <Text style={styles.checkIcon}>{isChecked ? '✅' : '⬜'}</Text>
-                    <Text
-                      style={[
-                        styles.cookingLineText,
-                        isChecked && styles.checkedLineText,
-                      ]}
-                    >
-                      {line}
+                    <Text style={[styles.servingChipText, servingSize === size && styles.servingChipTextActive]}>
+                      {size}人分{size === 2 ? '(標準)' : ''}
                     </Text>
                   </TouchableOpacity>
-                );
-              })
-            ) : (
-              <Text style={styles.detailText}>{recipeLines.join('\n')}</Text>
-            )}
-          </View>
-        </ScrollView>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionHeader}>📖 材料 ＆ 作り方 ({servingSize}人分)</Text>
+
+              {isCookingModeEnabled && isCookingMode ? (
+                recipeLines.map((line, idx) => {
+                  const isChecked = !!checkedLines[idx];
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      activeOpacity={0.7}
+                      onPress={() => toggleLineCheck(idx)}
+                      style={[styles.recipeLineRow, isChecked && styles.recipeLineRowChecked]}
+                    >
+                      <Text style={styles.checkIcon}>{isChecked ? '✅' : '⬜'}</Text>
+                      <Text
+                        style={[
+                          styles.cookingLineText,
+                          isChecked && styles.checkedLineText,
+                        ]}
+                      >
+                        {line}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={styles.detailText}>{recipeLines.join('\n')}</Text>
+              )}
+            </View>
+          </ScrollView>
+        </Animated.View>
       </SafeAreaView>
     );
   }
 
+  // =============================================================
+  // サブ画面：編集画面（シームレスアニメーション付き）
+  // =============================================================
   if (activeSubView === 'edit') {
     return (
       <SafeAreaView style={styles.container}>
@@ -1159,921 +1271,953 @@ export default function App() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
         >
-          <View style={styles.header}>
-            <View style={styles.headerSideArea}>
-              <TouchableOpacity
-                onPress={() => {
-                  resetForm();
-                  setActiveSubView(null);
-                }}
-              >
-                <Text style={styles.headerCancelButton}>キャンセル</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {editingRecipeId ? (isEditingDefault ? '基本レシピの調整' : 'レシピ・味の調整') : 'レシピ登録'}
-            </Text>
-
-            <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
-              <TouchableOpacity onPress={handleSave} disabled={isLoading}>
-                <Text style={[styles.headerSaveButton, isLoading && { opacity: 0.5 }]}>保存</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.editScrollContent}
-            keyboardShouldPersistTaps="handled"
+          <Animated.View
+            style={{
+              flex: 1,
+              opacity: subViewFadeAnim,
+              transform: [{ translateY: subViewSlideAnim }],
+            }}
           >
-            {isLoading ? (
-              <View style={styles.loadingBox}>
-                <ActivityIndicator size="large" color={theme.primary} />
-                <Text style={styles.loadingText}>{loadingMessage}</Text>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea}>
+                <TouchableOpacity
+                  onPress={() => {
+                    resetForm();
+                    closeSubViewSmoothly();
+                  }}
+                >
+                  <Text style={styles.headerCancelButton}>キャンセル</Text>
+                </TouchableOpacity>
               </View>
-            ) : (
-              <>
-                <View style={styles.formCard}>
-                  <Text style={styles.formCardHeader}>📌 基本情報</Text>
 
-                  <Text style={styles.fieldLabel}>料理名 <Text style={styles.requiredMark}>*</Text></Text>
-                  <TextInput
-                    style={styles.inputTitle}
-                    value={title}
-                    onChangeText={setTitle}
-                    placeholder="例: 豚の生姜焼き"
-                    placeholderTextColor={theme.textMuted}
-                  />
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {editingRecipeId ? (isEditingDefault ? '基本レシピの調整' : 'レシピ・味の調整') : 'レシピ登録'}
+              </Text>
 
-                  <Text style={styles.fieldLabel}>📸 完成した料理の写真</Text>
-                  {foodImageUri ? (
-                    <View style={styles.photoPreviewWrapper}>
-                      <Image source={{ uri: foodImageUri }} style={styles.foodPhotoPreview} />
-                      <TouchableOpacity style={styles.changePhotoBtn} onPress={pickFoodPhoto}>
-                        <Text style={styles.changePhotoBtnText}>写真を変更</Text>
+              <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
+                <TouchableOpacity onPress={handleSave} disabled={isLoading}>
+                  <Text style={[styles.headerSaveButton, isLoading && { opacity: 0.5 }]}>保存</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.editScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {isLoading ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator size="large" color={theme.primary} />
+                  <Text style={styles.loadingText}>{loadingMessage}</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.formCard}>
+                    <Text style={styles.formCardHeader}>📌 基本情報</Text>
+
+                    <Text style={styles.fieldLabel}>料理名 <Text style={styles.requiredMark}>*</Text></Text>
+                    <TextInput
+                      style={styles.inputTitle}
+                      value={title}
+                      onChangeText={setTitle}
+                      placeholder="例: 豚の生姜焼き"
+                      placeholderTextColor={theme.textMuted}
+                    />
+
+                    <Text style={styles.fieldLabel}>📸 完成した料理の写真</Text>
+                    {foodImageUri ? (
+                      <View style={styles.photoPreviewWrapper}>
+                        <Image source={{ uri: foodImageUri }} style={styles.foodPhotoPreview} />
+                        <TouchableOpacity style={styles.changePhotoBtn} onPress={pickFoodPhoto}>
+                          <Text style={styles.changePhotoBtnText}>写真を変更</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity style={styles.photoSelectBox} onPress={pickFoodPhoto} activeOpacity={0.7}>
+                        <Text style={styles.photoSelectIcon}>📷</Text>
+                        <Text style={styles.photoSelectText}>写真を設定する（任意）</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>⏱️ 調理時間の目安（分）</Text>
+                    <TextInput
+                      style={styles.inputRegular}
+                      value={String(cookingTime)}
+                      onChangeText={(val) => setCookingTime(val.replace(/[^0-9]/g, ''))}
+                      placeholder="例: 15"
+                      placeholderTextColor={theme.textMuted}
+                      keyboardType="number-pad"
+                    />
+
+                    <Text style={[styles.fieldLabel, { marginTop: 10 }]}>🏷️ お弁当・作り置きタグ</Text>
+                    <View style={styles.tagToggleRow}>
+                      <TouchableOpacity
+                        style={[styles.tagToggleBtn, isBento && styles.tagToggleBtnActive]}
+                        onPress={() => setIsBento(!isBento)}
+                      >
+                        <Text style={[styles.tagToggleBtnText, isBento && styles.tagToggleBtnTextActive]}>
+                          🍱 お弁当向き {isBento ? '✔' : ''}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.tagToggleBtn, isMealPrep && styles.tagToggleBtnActive]}
+                        onPress={() => setIsMealPrep(!isMealPrep)}
+                      >
+                        <Text style={[styles.tagToggleBtnText, isMealPrep && styles.tagToggleBtnTextActive]}>
+                          🧊 作り置き向き {isMealPrep ? '✔' : ''}
+                        </Text>
                       </TouchableOpacity>
                     </View>
-                  ) : (
-                    <TouchableOpacity style={styles.photoSelectBox} onPress={pickFoodPhoto} activeOpacity={0.7}>
-                      <Text style={styles.photoSelectIcon}>📷</Text>
-                      <Text style={styles.photoSelectText}>写真を設定する（任意）</Text>
-                    </TouchableOpacity>
-                  )}
 
-                  <Text style={[styles.fieldLabel, { marginTop: 14 }]}>⏱️ 調理時間の目安（分）</Text>
-                  <TextInput
-                    style={styles.inputRegular}
-                    value={String(cookingTime)}
-                    onChangeText={(val) => setCookingTime(val.replace(/[^0-9]/g, ''))}
-                    placeholder="例: 15"
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="number-pad"
-                  />
-
-                  <Text style={[styles.fieldLabel, { marginTop: 10 }]}>🏷️ お弁当・作り置きタグ</Text>
-                  <View style={styles.tagToggleRow}>
-                    <TouchableOpacity
-                      style={[styles.tagToggleBtn, isBento && styles.tagToggleBtnActive]}
-                      onPress={() => setIsBento(!isBento)}
-                    >
-                      <Text style={[styles.tagToggleBtnText, isBento && styles.tagToggleBtnTextActive]}>
-                        🍱 お弁当向き {isBento ? '✔' : ''}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.tagToggleBtn, isMealPrep && styles.tagToggleBtnActive]}
-                      onPress={() => setIsMealPrep(!isMealPrep)}
-                    >
-                      <Text style={[styles.tagToggleBtnText, isMealPrep && styles.tagToggleBtnTextActive]}>
-                        🧊 作り置き向き {isMealPrep ? '✔' : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={[styles.fieldLabel, { marginTop: 12 }]}>🏷️ カテゴリー</Text>
-                  <View style={styles.categorySelectorRow}>
-                    {CATEGORIES.map((cat) => {
-                      const isSelected = category === cat.key;
-                      return (
-                        <TouchableOpacity
-                          key={cat.key}
-                          style={[styles.categoryChip, isSelected && styles.categoryChipSelected]}
-                          onPress={() => setCategory(cat.key)}
-                        >
-                          <Text
-                            style={[
-                              styles.categoryChipText,
-                              isSelected && styles.categoryChipTextSelected,
-                            ]}
+                    <Text style={[styles.fieldLabel, { marginTop: 12 }]}>🏷️ カテゴリー</Text>
+                    <View style={styles.categorySelectorRow}>
+                      {CATEGORIES.map((cat) => {
+                        const isSelected = category === cat.key;
+                        return (
+                          <TouchableOpacity
+                            key={cat.key}
+                            style={[styles.categoryChip, isSelected && styles.categoryChipSelected]}
+                            onPress={() => setCategory(cat.key)}
                           >
-                            {cat.icon} {cat.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                            <Text
+                              style={[
+                                styles.categoryChipText,
+                                isSelected && styles.categoryChipTextSelected,
+                              ]}
+                            >
+                              {cat.icon} {cat.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
-                </View>
 
-                <View style={[styles.formCard, styles.formCardHighlight]}>
-                  <Text style={[styles.formCardHeader, { color: theme.primary }]}>
-                    💡 わが家の味調整 ＆ 家族の評価
-                  </Text>
+                  <View style={[styles.formCard, styles.formCardHighlight]}>
+                    <Text style={[styles.formCardHeader, { color: theme.primary }]}>
+                      💡 わが家の味調整 ＆ 家族の評価
+                    </Text>
 
-                  <Text style={styles.fieldLabel}>⭐ おいしさの評価（星をつけると定番へ昇格）</Text>
-                  <View style={styles.familyRatingContainer}>
-                    {members.map((m) => {
-                      const currentRating = familyRatings[m.id] ?? 0;
-                      return (
-                        <View key={m.id} style={styles.familyRatingRow}>
-                          <Text style={styles.familyMemberName} numberOfLines={1}>
-                            👤 {m.name}
-                          </Text>
-                          <View style={styles.starButtonGroup}>
-                            {RATING_STARS.map((_, starVal) => (
-                              <TouchableOpacity
-                                key={starVal}
-                                style={[
-                                  styles.starButton,
-                                  currentRating === starVal && styles.starButtonActive,
-                                ]}
-                                onPress={() => {
-                                  setFamilyRatings((prev) => ({ ...prev, [m.id]: starVal }));
-                                  if (starVal > 0) setIsCookedState(true);
-                                }}
-                              >
-                                <Text
+                    <Text style={styles.fieldLabel}>⭐ おいしさの評価（星をつけると定番へ昇格）</Text>
+                    <View style={styles.familyRatingContainer}>
+                      {members.map((m) => {
+                        const currentRating = familyRatings[m.id] ?? 0;
+                        return (
+                          <View key={m.id} style={styles.familyRatingRow}>
+                            <Text style={styles.familyMemberName} numberOfLines={1}>
+                              👤 {m.name}
+                            </Text>
+                            <View style={styles.starButtonGroup}>
+                              {RATING_STARS.map((_, starVal) => (
+                                <TouchableOpacity
+                                  key={starVal}
                                   style={[
-                                    styles.starButtonText,
-                                    currentRating === starVal && styles.starButtonTextActive,
+                                    styles.starButton,
+                                    currentRating === starVal && styles.starButtonActive,
                                   ]}
+                                  onPress={() => {
+                                    setFamilyRatings((prev) => ({ ...prev, [m.id]: starVal }));
+                                    if (starVal > 0) setIsCookedState(true);
+                                  }}
                                 >
-                                  {starVal === 0 ? '無し' : '★'.repeat(starVal)}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
+                                  <Text
+                                    style={[
+                                      styles.starButtonText,
+                                      currentRating === starVal && styles.starButtonTextActive,
+                                    ]}
+                                  >
+                                    {starVal === 0 ? '無し' : '★'.repeat(starVal)}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
                           </View>
-                        </View>
-                      );
-                    })}
+                        );
+                      })}
+                    </View>
+
+                    <Text style={[styles.fieldLabel, { marginTop: 14 }]}>
+                      ✍️ 味の調整・感想メモ
+                    </Text>
+                    <Text style={styles.subLabelHelp}>
+                      「醤油小さじ1多めが黄金比」「少し塩分控えめにする」など残すと次回迷いません
+                    </Text>
+                    <TextInput
+                      style={styles.noteInput}
+                      value={notes}
+                      onChangeText={setNotes}
+                      placeholder="家族の反応や、次回に向けた調味料の微調整..."
+                      placeholderTextColor={theme.textMuted}
+                      multiline
+                      scrollEnabled={false}
+                    />
                   </View>
 
-                  <Text style={[styles.fieldLabel, { marginTop: 14 }]}>
-                    ✍️ 味の調整・感想メモ
-                  </Text>
-                  <Text style={styles.subLabelHelp}>
-                    「醤油小さじ1多めが黄金比」「少し塩分控えめにする」など残すと次回迷いません
-                  </Text>
-                  <TextInput
-                    style={styles.noteInput}
-                    value={notes}
-                    onChangeText={setNotes}
-                    placeholder="家族の反応や、次回に向けた調味料の微調整..."
-                    placeholderTextColor={theme.textMuted}
-                    multiline
-                    scrollEnabled={false}
-                  />
-                </View>
+                  <View style={styles.formCard}>
+                    <Text style={styles.formCardHeader}>📖 レシピ内容 ＆ 参考リンク</Text>
 
-                <View style={styles.formCard}>
-                  <Text style={styles.formCardHeader}>📖 レシピ内容 ＆ 参考リンク</Text>
+                    <Text style={styles.fieldLabel}>🌐 参考にしたWebページURL</Text>
+                    <TextInput
+                      style={styles.inputRegular}
+                      value={webUrl}
+                      onChangeText={setWebUrl}
+                      placeholder="例: https://cookpad.com/... や YouTubeのURL"
+                      placeholderTextColor={theme.textMuted}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
 
-                  <Text style={styles.fieldLabel}>🌐 参考にしたWebページURL</Text>
-                  <TextInput
-                    style={styles.inputRegular}
-                    value={webUrl}
-                    onChangeText={setWebUrl}
-                    placeholder="例: https://cookpad.com/... や YouTubeのURL"
-                    placeholderTextColor={theme.textMuted}
-                    autoCapitalize="none"
-                    keyboardType="url"
-                  />
+                    <Text style={[styles.fieldLabel, { marginTop: 12 }]}>
+                      📝 材料 ＆ 作り方
+                    </Text>
+                    <TextInput
+                      style={styles.recipeTextInput}
+                      value={extractedText}
+                      onChangeText={setExtractedText}
+                      placeholder="材料や手順（自由に加筆・修正できます）"
+                      placeholderTextColor={theme.textMuted}
+                      multiline
+                      scrollEnabled={false}
+                    />
+                  </View>
 
-                  <Text style={[styles.fieldLabel, { marginTop: 12 }]}>
-                    📝 材料 ＆ 作り方
-                  </Text>
-                  <TextInput
-                    style={styles.recipeTextInput}
-                    value={extractedText}
-                    onChangeText={setExtractedText}
-                    placeholder="材料や手順（自由に加筆・修正できます）"
-                    placeholderTextColor={theme.textMuted}
-                    multiline
-                    scrollEnabled={false}
-                  />
-                </View>
-
-                {editingRecipeId ? (
-                  isEditingDefault ? (
-                    <TouchableOpacity
-                      style={styles.resetDefaultBtn}
-                      onPress={() => handleResetDefaultRecipe(editingRecipeId)}
-                    >
-                      <Text style={styles.resetDefaultBtnText}>🔄 この基本レシピを初期状態に戻す</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.deleteFormBtn}
-                      onPress={() => handleDeletePress(editingRecipeId)}
-                    >
-                      <Text style={styles.deleteFormBtnText}>🗑️ このレシピを削除する</Text>
-                    </TouchableOpacity>
-                  )
-                ) : null}
-              </>
-            )}
-          </ScrollView>
+                  {editingRecipeId ? (
+                    isEditingDefault ? (
+                      <SpringCard
+                        style={styles.resetDefaultBtn}
+                        onPress={() => handleResetDefaultRecipe(editingRecipeId)}
+                      >
+                        <Text style={styles.resetDefaultBtnText}>🔄 この基本レシピを初期状態に戻す</Text>
+                      </SpringCard>
+                    ) : (
+                      <SpringCard
+                        style={styles.deleteFormBtn}
+                        onPress={() => handleDeletePress(editingRecipeId)}
+                      >
+                        <Text style={styles.deleteFormBtnText}>🗑️ このレシピを削除する</Text>
+                      </SpringCard>
+                    )
+                  ) : null}
+                </>
+              )}
+            </ScrollView>
+          </Animated.View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
 
+  // =============================================================
+  // メイン画面（なめらかなタブ遷移付き）
+  // =============================================================
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle={theme.statusBar} backgroundColor={theme.headerBg} />
 
-      {currentTab === 'home' && (
-        <View style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <View style={styles.headerSideArea} />
-            <Image
-              source={require('./assets/logo.png')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
-            <View style={styles.headerSideArea} />
-          </View>
-
-          <ScrollView style={styles.homeScrollView}>
-            {isHeadlineEnabled && currentSeasonalText ? (
-              <TouchableOpacity
-                style={styles.headlineBarHome}
-                activeOpacity={0.7}
-                onPress={() => setCurrentTab('recipes')}
-              >
-                <Text style={styles.headlineTextHome}>
-                  {currentSeasonIcon} {currentMonth}月の旬食材: {currentSeasonalText}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            <View style={styles.homeSectionHeader}>
-              <Text style={styles.homeSectionTitle}>🙋 今夜のリクエスト</Text>
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: tabFadeAnim,
+          transform: [{ translateY: tabTranslateY }],
+        }}
+      >
+        {/* -----------------------------------------------------------
+            タブ1：🏠 ホーム画面
+        ----------------------------------------------------------- */}
+        {currentTab === 'home' && (
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea} />
+              <Image
+                source={require('./assets/logo.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
+              <View style={styles.headerSideArea} />
             </View>
-            {isRequestEnabled && requestedCount > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {allRecipes
-                  .filter((r) => r.isRequested)
-                  .map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[styles.horizontalCard, { borderColor: '#E67E22', backgroundColor: theme.isDark ? '#2E2210' : '#FEF9E7' }]}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        setSelectedRecipe(item);
-                        setIsCookingMode(false);
-                        setActiveSubView('detail');
-                      }}
-                    >
-                      {item.foodImageUri || item.imageUri ? (
-                        <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
-                      ) : (
-                        <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
-                          <Text style={{ fontSize: 24 }}>🍽️</Text>
-                        </View>
-                      )}
-                      <View style={styles.horizontalCardBody}>
-                        <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
-                        <Text style={{ fontSize: 11, color: '#E67E22', fontWeight: 'bold' }}>🙋 リクエスト中</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.homeEmptyCard}>
-                <Text style={styles.homeEmptyCardTitle}>🙋 本日のリクエストはありません</Text>
-                <Text style={styles.homeEmptyCardSub}>
-                  家族に「今日何食べたい？」と聞いてみませんか？{`\n`}
-                  各レシピの「今日これ食べたい！」を押すとここに並びます。
-                </Text>
-              </View>
-            )}
 
-            <View style={styles.homeSectionHeader}>
-              <Text style={styles.homeSectionTitle}>💡 今日のオススメ（ごぶさたスタメン）</Text>
-            </View>
-            {recommendedStapleRecipe ? (
-              <TouchableOpacity
-                style={styles.homeRecommendCard}
-                activeOpacity={0.8}
-                onPress={() => {
-                  setSelectedRecipe(recommendedStapleRecipe);
-                  setIsCookingMode(false);
-                  setActiveSubView('detail');
-                }}
-              >
-                <View style={styles.homeRecommendLeft}>
-                  <Text style={styles.homeRecommendTag}>⭐ わが家の殿堂入り</Text>
-                  <Text style={styles.homeRecommendTitle} numberOfLines={1}>
-                    {getCategoryIcon(recommendedStapleRecipe.category)} {recommendedStapleRecipe.title}
-                  </Text>
-                  <Text style={styles.homeRecommendSub}>
-                    {recommendedStapleRecipe.lastCookedAt
-                      ? `前回: ${formatRelativeDate(recommendedStapleRecipe.lastCookedAt)}に調理`
-                      : '最近作っていない鉄板メニューです'}
-                  </Text>
-                </View>
-                <View style={styles.homeRecommendBtn}>
-                  <Text style={styles.homeRecommendBtnText}>決定 ›</Text>
-                </View>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.homeEmptyCard}>
-                <Text style={styles.homeEmptyCardTitle}>💡 オススメレシピの準備中</Text>
-                <Text style={styles.homeEmptyCardSub}>
-                  レシピに「★★★」の評価をつけていくと、最近作っていないおすすめ料理がここに自動提案されます。
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.homeSectionHeader}>
-              <Text style={styles.homeSectionTitle}>🕒 直近の献立（被り防止）</Text>
-            </View>
-            {isCookedButtonEnabled && recentCookedRecipes.length > 0 ? (
-              <View style={styles.recentMealCard}>
-                {recentCookedRecipes.map((r) => (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={styles.recentMealRow}
-                    onPress={() => {
-                      setSelectedRecipe(r);
-                      setIsCookingMode(false);
-                      setActiveSubView('detail');
-                    }}
-                  >
-                    <Text style={styles.recentMealDate}>{formatRelativeDate(r.lastCookedAt)}</Text>
-                    <Text style={styles.recentMealTitle} numberOfLines={1}>
-                      {getCategoryIcon(r.category)} {r.title}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: theme.textMuted }}>詳細 ›</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.homeEmptyCard}>
-                <Text style={styles.homeEmptyCardTitle}>🕒 調理履歴はまだありません</Text>
-                <Text style={styles.homeEmptyCardSub}>
-                  料理を作った後に「調理終了」を押すと、ここに履歴が自動記録され、毎日の献立の被り防止に役立ちます。
-                </Text>
-              </View>
-            )}
-
-            <View style={[styles.homeSectionHeader, { marginTop: 16 }]}>
-              <Text style={styles.homeSectionTitle}>🌱 週末の挑戦（作ってみたい）</Text>
-            </View>
-            {wantToCookRecipes.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                {wantToCookRecipes.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.horizontalCard}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      setSelectedRecipe(item);
-                      setIsCookingMode(false);
-                      setActiveSubView('detail');
-                    }}
-                  >
-                    {item.foodImageUri || item.imageUri ? (
-                      <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
-                    ) : (
-                      <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
-                        <Text style={{ fontSize: 24 }}>🌱</Text>
-                      </View>
-                    )}
-                    <View style={styles.horizontalCardBody}>
-                      <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
-                      <View style={styles.horizontalCardMeta}>
-                        <Text style={{ fontSize: 10, color: '#27AE60', fontWeight: 'bold' }}>🌱 未調理</Text>
-                        {item.cookingTime ? <Text style={{ fontSize: 10, color: theme.textMuted }}>⏱️{item.cookingTime}分</Text> : null}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.homeEmptyCard}>
-                <Text style={styles.homeEmptyCardTitle}>🌱 作ってみたいレシピはありません</Text>
-                <Text style={styles.homeEmptyCardSub}>
-                  SNSや本で見つけた気になる料理を「レシピ帳」の「＋追加」からスクショ保存してみましょう！休日の挑戦枠に並びます。
-                </Text>
-              </View>
-            )}
-
-            {topStarredRecipes.length > 0 ? (
-              <>
-                <View style={styles.homeSectionHeader}>
-                  <Text style={styles.homeSectionTitle}>⭐ わが家の殿堂入り（★★★）</Text>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
-                  {topStarredRecipes.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.horizontalCard}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        setSelectedRecipe(item);
-                        setIsCookingMode(false);
-                        setActiveSubView('detail');
-                      }}
-                    >
-                      {item.foodImageUri || item.imageUri ? (
-                        <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
-                      ) : (
-                        <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
-                          <Text style={{ fontSize: 24 }}>🍽️</Text>
-                        </View>
-                      )}
-                      <View style={styles.horizontalCardBody}>
-                        <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
-                        <Text style={{ fontSize: 10, color: '#E67E22', fontWeight: 'bold' }}>★★★ リピート確定</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            ) : null}
-          </ScrollView>
-        </View>
-      )}
-
-      {currentTab === 'recipes' && (
-        <View style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <View style={styles.headerSideArea} />
-            <Text style={styles.headerTitle}>📖 レシピ帳</Text>
-            <View style={styles.headerSideArea} />
-          </View>
-
-          <View style={styles.searchBarContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="料理名・食材・メモで検索..."
-              placeholderTextColor={theme.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              clearButtonMode="while-editing"
-            />
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterTabsScroll}>
-              <TouchableOpacity
-                style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
-                onPress={() => setFilterMode('all')}
-              >
-                <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
-                  すべて ({allRecipes.length})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.filterTab, filterMode === 'userOnly' && styles.filterTabActiveUserOnly]}
-                onPress={() => setFilterMode('userOnly')}
-              >
-                <Text style={[styles.filterTabText, filterMode === 'userOnly' && styles.filterTabTextActive]}>
-                  🏠 登録レシピ ({userRecipeCount})
-                </Text>
-              </TouchableOpacity>
-
-              {isRequestEnabled ? (
+            <ScrollView style={styles.homeScrollView}>
+              {isHeadlineEnabled && currentSeasonalText ? (
                 <TouchableOpacity
-                  style={[styles.filterTab, filterMode === 'requested' && styles.filterTabActiveRequested]}
-                  onPress={() => setFilterMode('requested')}
+                  style={styles.headlineBarHome}
+                  activeOpacity={0.8}
+                  onPress={() => switchTabSmoothly('recipes')}
                 >
-                  <Text style={[styles.filterTabText, filterMode === 'requested' && styles.filterTabTextActiveRequested]}>
-                    🙋 食べたい！ ({requestedCount})
+                  <Text style={styles.headlineTextHome}>
+                    {currentSeasonIcon} {currentMonth}月の旬食材: {currentSeasonalText}
                   </Text>
                 </TouchableOpacity>
               ) : null}
 
-              <TouchableOpacity
-                style={[styles.filterTab, filterMode === 'wantToCook' && styles.filterTabActiveWant]}
-                onPress={() => setFilterMode('wantToCook')}
-              >
-                <Text style={[styles.filterTabText, filterMode === 'wantToCook' && styles.filterTabTextActiveWant]}>
-                  🌱 作ってみたい ({wantToCookCount})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.filterTab, filterMode === 'bento' && styles.filterTabActiveBento]}
-                onPress={() => setFilterMode('bento')}
-              >
-                <Text style={[styles.filterTabText, filterMode === 'bento' && styles.filterTabTextActive]}>
-                  🍱 お弁当
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.filterTab, filterMode === 'mealPrep' && styles.filterTabActiveMealPrep]}
-                onPress={() => setFilterMode('mealPrep')}
-              >
-                <Text style={[styles.filterTabText, filterMode === 'mealPrep' && styles.filterTabTextActive]}>
-                  🧊 作り置き
-                </Text>
-              </TouchableOpacity>
-
-              {isShowDefaultRecipes ? (
-                <TouchableOpacity
-                  style={[styles.filterTab, filterMode === 'preset' && styles.filterTabActivePreset]}
-                  onPress={() => setFilterMode('preset')}
-                >
-                  <Text style={[styles.filterTabText, filterMode === 'preset' && styles.filterTabTextActivePreset]}>
-                    📖 基本レシピ
+              {/* ① 今夜のリクエスト */}
+              <View style={styles.homeSectionHeader}>
+                <Text style={styles.homeSectionTitle}>🙋 今夜のリクエスト</Text>
+              </View>
+              {isRequestEnabled && requestedCount > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                  {allRecipes
+                    .filter((r) => r.isRequested)
+                    .map((item) => (
+                      <SpringCard
+                        key={item.id}
+                        style={[styles.horizontalCard, { borderColor: '#E8A86B', backgroundColor: theme.isDark ? '#261F1A' : '#FFFDF9' }]}
+                        onPress={() => {
+                          setSelectedRecipe(item);
+                          setIsCookingMode(false);
+                          openSubViewSmoothly('detail');
+                        }}
+                      >
+                        {item.foodImageUri || item.imageUri ? (
+                          <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
+                        ) : (
+                          <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
+                            <Text style={{ fontSize: 24 }}>🍽️</Text>
+                          </View>
+                        )}
+                        <View style={styles.horizontalCardBody}>
+                          <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
+                          <Text style={{ fontSize: 11, color: '#C85A17', fontWeight: 'bold' }}>🙋 リクエスト中</Text>
+                        </View>
+                      </SpringCard>
+                    ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardTitle}>🙋 本日のリクエストはありません</Text>
+                  <Text style={styles.homeEmptyCardSub}>
+                    家族に「今日何食べたい？」と聞いてみませんか？{`\n`}
+                    各レシピの「今日これ食べたい！」を押すとここに並びます。
                   </Text>
-                </TouchableOpacity>
+                </View>
+              )}
+
+              {/* ② 今日のオススメ（ごぶさたスタメン） */}
+              <View style={styles.homeSectionHeader}>
+                <Text style={styles.homeSectionTitle}>💡 今日のオススメ（ごぶさたスタメン）</Text>
+              </View>
+              {recommendedStapleRecipe ? (
+                <SpringCard
+                  style={styles.homeRecommendCard}
+                  onPress={() => {
+                    setSelectedRecipe(recommendedStapleRecipe);
+                    setIsCookingMode(false);
+                    openSubViewSmoothly('detail');
+                  }}
+                >
+                  <View style={styles.homeRecommendLeft}>
+                    <Text style={styles.homeRecommendTag}>⭐ わが家の殿堂入り</Text>
+                    <Text style={styles.homeRecommendTitle} numberOfLines={1}>
+                      {getCategoryIcon(recommendedStapleRecipe.category)} {recommendedStapleRecipe.title}
+                    </Text>
+                    <Text style={styles.homeRecommendSub}>
+                      {recommendedStapleRecipe.lastCookedAt
+                        ? `前回: ${formatRelativeDate(recommendedStapleRecipe.lastCookedAt)}に調理`
+                        : '最近作っていない鉄板メニューです'}
+                    </Text>
+                  </View>
+                  <View style={styles.homeRecommendBtn}>
+                    <Text style={styles.homeRecommendBtnText}>決定 ›</Text>
+                  </View>
+                </SpringCard>
+              ) : (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardTitle}>💡 オススメレシピの準備中</Text>
+                  <Text style={styles.homeEmptyCardSub}>
+                    レシピに「★★★」の評価をつけていくと、最近作っていないおすすめ料理がここに自動提案されます。
+                  </Text>
+                </View>
+              )}
+
+              {/* ③ 直近の献立（被り防止） */}
+              <View style={styles.homeSectionHeader}>
+                <Text style={styles.homeSectionTitle}>🕒 直近の献立（被り防止）</Text>
+              </View>
+              {isCookedButtonEnabled && recentCookedRecipes.length > 0 ? (
+                <View style={styles.recentMealCard}>
+                  {recentCookedRecipes.map((r) => (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={styles.recentMealRow}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setSelectedRecipe(r);
+                        setIsCookingMode(false);
+                        openSubViewSmoothly('detail');
+                      }}
+                    >
+                      <Text style={styles.recentMealDate}>{formatRelativeDate(r.lastCookedAt)}</Text>
+                      <Text style={styles.recentMealTitle} numberOfLines={1}>
+                        {getCategoryIcon(r.category)} {r.title}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: theme.textMuted }}>詳細 ›</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardTitle}>🕒 調理履歴はまだありません</Text>
+                  <Text style={styles.homeEmptyCardSub}>
+                    料理を作った後に「調理終了」を押すと、ここに履歴が自動記録され、毎日の献立の被り防止に役立ちます。
+                  </Text>
+                </View>
+              )}
+
+              {/* ④ 🌱 週末の挑戦（未調理カルーセル） */}
+              <View style={[styles.homeSectionHeader, { marginTop: 16 }]}>
+                <Text style={styles.homeSectionTitle}>🌱 週末の挑戦（作ってみたい）</Text>
+              </View>
+              {wantToCookRecipes.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                  {wantToCookRecipes.map((item) => (
+                    <SpringCard
+                      key={item.id}
+                      style={styles.horizontalCard}
+                      onPress={() => {
+                        setSelectedRecipe(item);
+                        setIsCookingMode(false);
+                        openSubViewSmoothly('detail');
+                      }}
+                    >
+                      {item.foodImageUri || item.imageUri ? (
+                        <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
+                      ) : (
+                        <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
+                          <Text style={{ fontSize: 24 }}>🌱</Text>
+                        </View>
+                      )}
+                      <View style={styles.horizontalCardBody}>
+                        <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
+                        <View style={styles.horizontalCardMeta}>
+                          <Text style={{ fontSize: 10.5, color: theme.accentSage, fontWeight: 'bold' }}>🌱 未調理</Text>
+                          {item.cookingTime ? <Text style={{ fontSize: 10.5, color: theme.textMuted }}>⏱️{item.cookingTime}分</Text> : null}
+                        </View>
+                      </View>
+                    </SpringCard>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardTitle}>🌱 作ってみたいレシピはありません</Text>
+                  <Text style={styles.homeEmptyCardSub}>
+                    SNSや本で見つけた気になる料理を「レシピ帳」の「＋追加」からスクショ保存してみましょう！休日の挑戦枠に並びます。
+                  </Text>
+                </View>
+              )}
+
+              {/* ⑤ ⭐ わが家の殿堂入り */}
+              {topStarredRecipes.length > 0 ? (
+                <>
+                  <View style={styles.homeSectionHeader}>
+                    <Text style={styles.homeSectionTitle}>⭐ わが家の殿堂入り（★★★）</Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
+                    {topStarredRecipes.map((item) => (
+                      <SpringCard
+                        key={item.id}
+                        style={styles.horizontalCard}
+                        onPress={() => {
+                          setSelectedRecipe(item);
+                          setIsCookingMode(false);
+                          openSubViewSmoothly('detail');
+                        }}
+                      >
+                        {item.foodImageUri || item.imageUri ? (
+                          <Image source={{ uri: item.foodImageUri || item.imageUri }} style={styles.horizontalThumb} />
+                        ) : (
+                          <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
+                            <Text style={{ fontSize: 24 }}>🍽️</Text>
+                          </View>
+                        )}
+                        <View style={styles.horizontalCardBody}>
+                          <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
+                          <Text style={{ fontSize: 10.5, color: '#C85A17', fontWeight: 'bold' }}>★★★ リピート確定</Text>
+                        </View>
+                      </SpringCard>
+                    ))}
+                  </ScrollView>
+                </>
               ) : null}
             </ScrollView>
           </View>
+        )}
 
-          <FlatList
-            data={filteredRecipes}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            refreshing={isRefreshing}
-            onRefresh={handlePullToRefresh}
-            renderItem={({ item }) => {
-              const displayImage = item.foodImageUri || item.imageUri;
-              const categoryIcon = getCategoryIcon(item.category);
-
-              return (
-                <TouchableOpacity
-                  style={[styles.card, isRequestEnabled && item.isRequested && styles.cardRequestedHighlight]}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setSelectedRecipe(item);
-                    setIsCookingMode(false);
-                    setCheckedLines({});
-                    setActiveSubView('detail');
-                  }}
-                >
-                  {displayImage ? (
-                    <Image source={{ uri: displayImage }} style={styles.thumbnail} />
-                  ) : (
-                    <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
-                      <Text style={{ fontSize: 24 }}>{categoryIcon}</Text>
-                    </View>
-                  )}
-                  <View style={styles.cardBody}>
-                    <View style={styles.cardHeaderRow}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-                      {item.category ? (
-                        <View style={styles.cardBadgeItem}>
-                          <Text style={styles.cardBadgeItemText}>{categoryIcon} {item.category}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    <View style={styles.cardBadgesRow}>
-                      {item.cookingTime ? (
-                        <View style={styles.cardBadgeItem}>
-                          <Text style={styles.cardBadgeItemText}>⏱️ {item.cookingTime}分</Text>
-                        </View>
-                      ) : null}
-                      {item.isBento ? (
-                        <View style={[styles.cardBadgeItem, { backgroundColor: '#FDF2E9' }]}>
-                          <Text style={[styles.cardBadgeItemText, { color: '#E67E22' }]}>🍱 弁当</Text>
-                        </View>
-                      ) : null}
-                      {item.isMealPrep ? (
-                        <View style={[styles.cardBadgeItem, { backgroundColor: '#EBF5FB' }]}>
-                          <Text style={[styles.cardBadgeItemText, { color: '#2980B9' }]}>🧊 置</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    {item.notes ? (
-                      <Text style={styles.cardNotes} numberOfLines={1}>💡 {item.notes}</Text>
-                    ) : (
-                      <Text style={styles.cardNotesEmpty}>メモ未入力</Text>
-                    )}
-
-                    <View style={styles.cardMetaRow}>
-                      <Text style={styles.cardDate}>
-                        {item.isDefault ? '📖 基本レシピ' : item.updatedAt ? `更新: ${item.updatedAt}` : `登録: ${item.createdAt}`}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
-
-          <TouchableOpacity style={styles.fab} activeOpacity={0.8} onPress={pickRecipeImage}>
-            <Text style={styles.fabText}>＋ レシピ追加</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {currentTab === 'shopping' && (
-        <View style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <View style={styles.headerSideArea} />
-            <Text style={styles.headerTitle}>🛒 買い物リスト</Text>
-            <View style={[styles.headerSideArea, { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'flex-end', gap: 10, width: 140 }]}>
-              {shoppingList.some((i) => i.checked) ? (
-                <TouchableOpacity onPress={handleClearBoughtItems}>
-                  <Text style={styles.clearBoughtText}>購入済クリア</Text>
-                </TouchableOpacity>
-              ) : null}
-              {shoppingList.length > 0 ? (
-                <TouchableOpacity onPress={handleClearAllShoppingList}>
-                  <Text style={styles.clearAllText}>全消去</Text>
-                </TouchableOpacity>
-              ) : null}
+        {/* -----------------------------------------------------------
+            タブ2：📖 レシピ帳画面
+        ----------------------------------------------------------- */}
+        {currentTab === 'recipes' && (
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea} />
+              <Text style={styles.headerTitle}>📖 レシピ帳</Text>
+              <View style={styles.headerSideArea} />
             </View>
-          </View>
 
-          <View style={styles.addShoppingBar}>
-            <TextInput
-              style={styles.addShoppingInput}
-              value={manualItemInput}
-              onChangeText={setManualItemInput}
-              placeholder="＋ 食材や日用品を直接追加..."
-              placeholderTextColor={theme.textMuted}
-              onSubmitEditing={handleAddManualShoppingItem}
-            />
-            <TouchableOpacity style={styles.addShoppingBtn} onPress={handleAddManualShoppingItem}>
-              <Text style={styles.addShoppingBtnText}>追加</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.searchBarContainer}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="料理名・食材・メモで検索..."
+                placeholderTextColor={theme.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                clearButtonMode="while-editing"
+              />
 
-          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 80 }}>
-            {shoppingList.length === 0 ? (
-              <View style={styles.homeEmptyCard}>
-                <Text style={styles.homeEmptyCardTitle}>🛒 買い物リストは空です</Text>
-                <Text style={styles.homeEmptyCardSub}>
-                  レシピ詳細画面の「🛒 買い物追加」ボタンを押すと、生鮮食材が自動で売り場順に集まります。
-                </Text>
-              </View>
-            ) : (
-              SHOPPING_AISLES.map((aisle) => {
-                const aisleItems = shoppingList.filter((item) => item.aisle === aisle.key);
-                if (aisleItems.length === 0) return null;
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterTabsScroll}>
+                <TouchableOpacity
+                  style={[styles.filterTab, filterMode === 'all' && styles.filterTabActive]}
+                  onPress={() => setFilterMode('all')}
+                >
+                  <Text style={[styles.filterTabText, filterMode === 'all' && styles.filterTabTextActive]}>
+                    すべて ({allRecipes.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterMode === 'userOnly' && styles.filterTabActiveUserOnly]}
+                  onPress={() => setFilterMode('userOnly')}
+                >
+                  <Text style={[styles.filterTabText, filterMode === 'userOnly' && styles.filterTabTextActive]}>
+                    🏠 登録レシピ ({userRecipeCount})
+                  </Text>
+                </TouchableOpacity>
+
+                {isRequestEnabled ? (
+                  <TouchableOpacity
+                    style={[styles.filterTab, filterMode === 'requested' && styles.filterTabActiveRequested]}
+                    onPress={() => setFilterMode('requested')}
+                  >
+                    <Text style={[styles.filterTabText, filterMode === 'requested' && styles.filterTabTextActiveRequested]}>
+                      🙋 食べたい！ ({requestedCount})
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterMode === 'wantToCook' && styles.filterTabActiveWant]}
+                  onPress={() => setFilterMode('wantToCook')}
+                >
+                  <Text style={[styles.filterTabText, filterMode === 'wantToCook' && styles.filterTabTextActiveWant]}>
+                    🌱 作ってみたい ({wantToCookCount})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterMode === 'bento' && styles.filterTabActiveBento]}
+                  onPress={() => setFilterMode('bento')}
+                >
+                  <Text style={[styles.filterTabText, filterMode === 'bento' && styles.filterTabTextActive]}>
+                    🍱 お弁当
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.filterTab, filterMode === 'mealPrep' && styles.filterTabActiveMealPrep]}
+                  onPress={() => setFilterMode('mealPrep')}
+                >
+                  <Text style={[styles.filterTabText, filterMode === 'mealPrep' && styles.filterTabTextActive]}>
+                    🧊 作り置き
+                  </Text>
+                </TouchableOpacity>
+
+                {isShowDefaultRecipes ? (
+                  <TouchableOpacity
+                    style={[styles.filterTab, filterMode === 'preset' && styles.filterTabActivePreset]}
+                    onPress={() => setFilterMode('preset')}
+                  >
+                    <Text style={[styles.filterTabText, filterMode === 'preset' && styles.filterTabTextActivePreset]}>
+                      📖 基本レシピ
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </ScrollView>
+            </View>
+
+            <FlatList
+              data={filteredRecipes}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshing={isRefreshing}
+              onRefresh={handlePullToRefresh}
+              renderItem={({ item }) => {
+                const displayImage = item.foodImageUri || item.imageUri;
+                const categoryIcon = getCategoryIcon(item.category);
 
                 return (
-                  <View key={aisle.key} style={styles.formCard}>
-                    <Text style={styles.formCardHeaderNoBorder}>{aisle.label}</Text>
-                    <View style={{ marginTop: 8 }}>
-                      {aisleItems.map((item) => (
-                        <View
-                          key={item.id}
-                          style={[styles.shoppingItemRow, item.checked && styles.shoppingItemRowChecked]}
-                        >
-                          <TouchableOpacity
-                            style={styles.shoppingItemCheckArea}
-                            onPress={() => handleToggleShoppingItem(item.id)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.shoppingCheckIcon}>{item.checked ? '✅' : '⬜'}</Text>
-                            <Text
-                              style={[
-                                styles.shoppingItemText,
-                                item.checked && styles.shoppingItemTextChecked,
-                              ]}
-                            >
-                              {item.name}
-                            </Text>
-                          </TouchableOpacity>
+                  <SpringCard
+                    style={[styles.card, isRequestEnabled && item.isRequested && styles.cardRequestedHighlight]}
+                    onPress={() => {
+                      setSelectedRecipe(item);
+                      setIsCookingMode(false);
+                      setCheckedLines({});
+                      openSubViewSmoothly('detail');
+                    }}
+                  >
+                    {displayImage ? (
+                      <Image source={{ uri: displayImage }} style={styles.thumbnail} />
+                    ) : (
+                      <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+                        <Text style={{ fontSize: 24 }}>{categoryIcon}</Text>
+                      </View>
+                    )}
+                    <View style={styles.cardBody}>
+                      <View style={styles.cardHeaderRow}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+                        {item.category ? (
+                          <View style={styles.cardBadgeItem}>
+                            <Text style={styles.cardBadgeItemText}>{categoryIcon} {item.category}</Text>
+                          </View>
+                        ) : null}
+                      </View>
 
-                          <TouchableOpacity
-                            style={styles.shoppingItemDeleteBtn}
-                            onPress={() => handleDeleteShoppingItem(item.id)}
-                          >
-                            <Text style={styles.shoppingItemDeleteText}>✕</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
+                      <View style={styles.cardBadgesRow}>
+                        {item.cookingTime ? (
+                          <View style={styles.cardBadgeItem}>
+                            <Text style={styles.cardBadgeItemText}>⏱️ {item.cookingTime}分</Text>
+                          </View>
+                        ) : null}
+                        {item.isBento ? (
+                          <View style={[styles.cardBadgeItem, { backgroundColor: '#FDF2E9' }]}>
+                            <Text style={[styles.cardBadgeItemText, { color: '#C85A17' }]}>🍱 弁当</Text>
+                          </View>
+                        ) : null}
+                        {item.isMealPrep ? (
+                          <View style={[styles.cardBadgeItem, { backgroundColor: '#EBF5FB' }]}>
+                            <Text style={[styles.cardBadgeItemText, { color: '#3A7CA5' }]}>🧊 置</Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {item.notes ? (
+                        <Text style={styles.cardNotes} numberOfLines={1}>💡 {item.notes}</Text>
+                      ) : (
+                        <Text style={styles.cardNotesEmpty}>メモ未入力</Text>
+                      )}
+
+                      <View style={styles.cardMetaRow}>
+                        <Text style={styles.cardDate}>
+                          {item.isDefault ? '📖 基本レシピ' : item.updatedAt ? `更新: ${item.updatedAt}` : `登録: ${item.createdAt}`}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
+                  </SpringCard>
                 );
-              })
-            )}
-          </ScrollView>
-        </View>
-      )}
+              }}
+            />
 
-      {currentTab === 'settings' && (
-        <View style={{ flex: 1 }}>
-          <View style={styles.header}>
-            <View style={styles.headerSideArea} />
-            <Text style={styles.headerTitle}>⚙️ アプリの設定</Text>
-            <View style={styles.headerSideArea} />
+            <SpringCard style={styles.fab} onPress={pickRecipeImage}>
+              <Text style={styles.fabText}>＋ レシピ追加</Text>
+            </SpringCard>
           </View>
+        )}
 
-          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 80 }}>
-            <View style={[styles.formCard, styles.formCardHighlight]}>
-              <Text style={[styles.formCardHeader, { color: theme.primary }]}>
-                🏠 家族グループ（データの共有・個別化）
-              </Text>
-              <Text style={styles.subLabelHelp}>
-                同じ家族IDを使うスマホ同士でのみレシピが同期されます。高セキュリティな1兆通り以上のIDで他世帯と完全に分離されます。
-              </Text>
-
-              <Text style={styles.fieldLabel}>あなたの家族ID</Text>
-              <View style={styles.familyIdDisplayBox}>
-                <Text style={styles.familyIdText} selectable={true}>{familyId || '発行中...'}</Text>
-                <TouchableOpacity
-                  style={styles.familyIdInfoBtn}
-                  onPress={() => {
-                    const msg = `あなたの家族ID: ${familyId}\n\nこのIDをパートナーや家族のスマホの「別の家族グループに参加」欄に入力すると、同じレシピ帳をリアルタイム共有できます。`;
-                    Platform.OS === 'web' ? window.alert(msg) : Alert.alert('家族グループID', msg);
-                  }}
-                >
-                  <Text style={styles.familyIdInfoBtnText}>共有方法</Text>
-                </TouchableOpacity>
+        {/* -----------------------------------------------------------
+            タブ3：🛒 買い物リスト画面
+        ----------------------------------------------------------- */}
+        {currentTab === 'shopping' && (
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea} />
+              <Text style={styles.headerTitle}>🛒 買い物リスト</Text>
+              <View style={[styles.headerSideArea, { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'flex-end', gap: 10, width: 140 }]}>
+                {shoppingList.some((i) => i.checked) ? (
+                  <TouchableOpacity onPress={handleClearBoughtItems}>
+                    <Text style={styles.clearBoughtText}>購入済クリア</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {shoppingList.length > 0 ? (
+                  <TouchableOpacity onPress={handleClearAllShoppingList}>
+                    <Text style={styles.clearAllText}>全消去</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
+            </View>
 
-              <TouchableOpacity
-                style={styles.regenerateIdBtn}
-                onPress={handleRegenerateFamilyId}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.regenerateIdBtnText}>🔄 新しい家族IDを再発行する</Text>
+            <View style={styles.addShoppingBar}>
+              <TextInput
+                style={styles.addShoppingInput}
+                value={manualItemInput}
+                onChangeText={setManualItemInput}
+                placeholder="＋ 食材や日用品を直接追加..."
+                placeholderTextColor={theme.textMuted}
+                onSubmitEditing={handleAddManualShoppingItem}
+              />
+              <TouchableOpacity style={styles.addShoppingBtn} onPress={handleAddManualShoppingItem}>
+                <Text style={styles.addShoppingBtnText}>追加</Text>
               </TouchableOpacity>
-
-              <Text style={[styles.fieldLabel, { marginTop: 14 }]}>別の家族グループに参加する</Text>
-              <View style={styles.joinFamilyRow}>
-                <TextInput
-                  style={styles.joinFamilyInput}
-                  value={joinFamilyInput}
-                  onChangeText={setJoinFamilyInput}
-                  placeholder="家族IDを入力 (例: FAM-XXXX-XXXX)"
-                  placeholderTextColor={theme.textMuted}
-                  autoCapitalize="characters"
-                />
-                <TouchableOpacity style={styles.joinFamilyBtn} onPress={handleJoinFamily}>
-                  <Text style={styles.joinFamilyBtnText}>参加</Text>
-                </TouchableOpacity>
-              </View>
             </View>
 
-            <View style={styles.formCard}>
-              <Text style={styles.formCardHeader}>🎨 画面のテーマ</Text>
-              <View style={styles.settingToggleRow}>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isDarkMode && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_dark_mode', false, setIsDarkMode)}
-                >
-                  <Text style={[styles.settingOptionText, !isDarkMode && styles.settingOptionTextActive]}>
-                    ☀️ ライトモード
+            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 90 }}>
+              {shoppingList.length === 0 ? (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardTitle}>🛒 買い物リストは空です</Text>
+                  <Text style={styles.homeEmptyCardSub}>
+                    レシピ詳細画面の「🛒 買い物追加」ボタンを押すと、生鮮食材が自動で売り場順に集まります。
                   </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, isDarkMode && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_dark_mode', true, setIsDarkMode)}
-                >
-                  <Text style={[styles.settingOptionText, isDarkMode && styles.settingOptionTextActive]}>
-                    🌙 ダークモード
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.formCard}>
-              <View style={styles.memberHeaderRow}>
-                <Text style={styles.formCardHeaderNoBorder}>👥 評価メンバーの管理</Text>
-                <Text style={styles.memberCountBadge}>{members.length} / 5 人</Text>
-              </View>
-              <Text style={styles.subLabelHelp}>
-                料理を評価するメンバーの名前を変更したり、家族を追加・削除できます（最大5人）。
-              </Text>
-
-              {members.map((m, idx) => (
-                <View key={m.id} style={styles.memberEditRow}>
-                  <Text style={styles.memberIndexLabel}>#{idx + 1}</Text>
-                  <TextInput
-                    style={styles.memberNameInput}
-                    value={m.name}
-                    onChangeText={(newName) => handleUpdateMemberName(m.id, newName)}
-                    placeholder="メンバー名（例: パパ、長男など）"
-                    placeholderTextColor={theme.textMuted}
-                  />
-                  {members.length > 1 ? (
-                    <TouchableOpacity
-                      style={styles.memberDeleteBtn}
-                      onPress={() => handleDeleteMember(m.id)}
-                    >
-                      <Text style={styles.memberDeleteBtnText}>✕</Text>
-                    </TouchableOpacity>
-                  ) : null}
                 </View>
-              ))}
+              ) : (
+                SHOPPING_AISLES.map((aisle) => {
+                  const aisleItems = shoppingList.filter((item) => item.aisle === aisle.key);
+                  if (aisleItems.length === 0) return null;
 
-              {members.length < 5 ? (
-                <TouchableOpacity
-                  style={styles.addMemberBtn}
-                  onPress={handleAddMember}
-                >
-                  <Text style={styles.addMemberBtnText}>＋ メンバーを追加する</Text>
-                </TouchableOpacity>
-              ) : null}
+                  return (
+                    <View key={aisle.key} style={styles.formCard}>
+                      <Text style={styles.formCardHeaderNoBorder}>{aisle.label}</Text>
+                      <View style={{ marginTop: 8 }}>
+                        {aisleItems.map((item) => (
+                          <View
+                            key={item.id}
+                            style={[styles.shoppingItemRow, item.checked && styles.shoppingItemRowChecked]}
+                          >
+                            <TouchableOpacity
+                              style={styles.shoppingItemCheckArea}
+                              onPress={() => handleToggleShoppingItem(item.id)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.shoppingCheckIcon}>{item.checked ? '✅' : '⬜'}</Text>
+                              <Text
+                                style={[
+                                  styles.shoppingItemText,
+                                  item.checked && styles.shoppingItemTextChecked,
+                                ]}
+                              >
+                                {item.name}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.shoppingItemDeleteBtn}
+                              onPress={() => handleDeleteShoppingItem(item.id)}
+                            >
+                              <Text style={styles.shoppingItemDeleteText}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* -----------------------------------------------------------
+            タブ4：⚙️ 設定画面
+        ----------------------------------------------------------- */}
+        {currentTab === 'settings' && (
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea} />
+              <Text style={styles.headerTitle}>⚙️ アプリの設定</Text>
+              <View style={styles.headerSideArea} />
             </View>
 
-            <View style={styles.formCard}>
-              <Text style={styles.formCardHeader}>⚙️ 家事・キッチン便利機能のON/OFF</Text>
+            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 90 }}>
+              <View style={[styles.formCard, styles.formCardHighlight]}>
+                <Text style={[styles.formCardHeader, { color: theme.primary }]}>
+                  🏠 家族グループ（データの共有・個別化）
+                </Text>
+                <Text style={styles.subLabelHelp}>
+                  同じ家族IDを使うスマホ同士でのみレシピが同期されます。高セキュリティな1兆通り以上のIDで他世帯と完全に分離されます。
+                </Text>
 
-              <Text style={styles.fieldLabel}>🧂 買い物追加時に「基本調味料」を除外する</Text>
-              <Text style={styles.subLabelHelp}>
-                ONにすると、醤油・みりん・酒・砂糖・油・塩などの常備調味料を買い物リストから自動除外します。
-              </Text>
-              <View style={[styles.settingToggleRow, { marginBottom: 12 }]}>
+                <Text style={styles.fieldLabel}>あなたの家族ID</Text>
+                <View style={styles.familyIdDisplayBox}>
+                  <Text style={styles.familyIdText} selectable={true}>{familyId || '発行中...'}</Text>
+                  <TouchableOpacity
+                    style={styles.familyIdInfoBtn}
+                    onPress={() => {
+                      const msg = `あなたの家族ID: ${familyId}\n\nこのIDをパートナーや家族のスマホの「別の家族グループに参加」欄に入力すると、同じレシピ帳をリアルタイム共有できます。`;
+                      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('家族グループID', msg);
+                    }}
+                  >
+                    <Text style={styles.familyIdInfoBtnText}>共有方法</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <TouchableOpacity
-                  style={[styles.settingOptionBtn, isExcludeStapleSeasonings && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_exclude_staple_seasonings', true, setIsExcludeStapleSeasonings)}
+                  style={styles.regenerateIdBtn}
+                  onPress={handleRegenerateFamilyId}
+                  activeOpacity={0.7}
                 >
-                  <Text style={[styles.settingOptionText, isExcludeStapleSeasonings && styles.settingOptionTextActive]}>
-                    除外する (推奨)
-                  </Text>
+                  <Text style={styles.regenerateIdBtnText}>🔄 新しい家族IDを再発行する</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isExcludeStapleSeasonings && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_exclude_staple_seasonings', false, setIsExcludeStapleSeasonings)}
-                >
-                  <Text style={[styles.settingOptionText, !isExcludeStapleSeasonings && styles.settingOptionTextActive]}>
-                    すべて追加
-                  </Text>
-                </TouchableOpacity>
+
+                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>別の家族グループに参加する</Text>
+                <View style={styles.joinFamilyRow}>
+                  <TextInput
+                    style={styles.joinFamilyInput}
+                    value={joinFamilyInput}
+                    onChangeText={setJoinFamilyInput}
+                    placeholder="家族IDを入力 (例: FAM-XXXX-XXXX)"
+                    placeholderTextColor={theme.textMuted}
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity style={styles.joinFamilyBtn} onPress={handleJoinFamily}>
+                    <Text style={styles.joinFamilyBtnText}>参加</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              <Text style={styles.fieldLabel}>🍁 旬食材ヘッドライン</Text>
-              <View style={[styles.settingToggleRow, { marginBottom: 12 }]}>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, isHeadlineEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_headline_enabled', true, setIsHeadlineEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, isHeadlineEnabled && styles.settingOptionTextActive]}>表示</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isHeadlineEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_headline_enabled', false, setIsHeadlineEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, !isHeadlineEnabled && styles.settingOptionTextActive]}>非表示</Text>
-                </TouchableOpacity>
+              <View style={styles.formCard}>
+                <Text style={styles.formCardHeader}>🎨 画面のテーマ</Text>
+                <View style={styles.settingToggleRow}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isDarkMode && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_dark_mode', false, setIsDarkMode)}
+                  >
+                    <Text style={[styles.settingOptionText, !isDarkMode && styles.settingOptionTextActive]}>
+                      ☀️ ライトモード
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isDarkMode && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_dark_mode', true, setIsDarkMode)}
+                  >
+                    <Text style={[styles.settingOptionText, isDarkMode && styles.settingOptionTextActive]}>
+                      🌙 ダークモード
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              <Text style={styles.fieldLabel}>📖 基本レシピ10品の表示</Text>
-              <View style={[styles.settingToggleRow, { marginBottom: 12 }]}>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, isShowDefaultRecipes && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_show_default_recipes', true, setIsShowDefaultRecipes)}
-                >
-                  <Text style={[styles.settingOptionText, isShowDefaultRecipes && styles.settingOptionTextActive]}>表示</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isShowDefaultRecipes && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_show_default_recipes', false, setIsShowDefaultRecipes)}
-                >
-                  <Text style={[styles.settingOptionText, !isShowDefaultRecipes && styles.settingOptionTextActive]}>非表示</Text>
-                </TouchableOpacity>
+              <View style={styles.formCard}>
+                <View style={styles.memberHeaderRow}>
+                  <Text style={styles.formCardHeaderNoBorder}>👥 評価メンバーの管理</Text>
+                  <Text style={styles.memberCountBadge}>{members.length} / 5 人</Text>
+                </View>
+                <Text style={styles.subLabelHelp}>
+                  料理を評価するメンバーの名前を変更したり、家族を追加・削除できます（最大5人）。
+                </Text>
+
+                {members.map((m, idx) => (
+                  <View key={m.id} style={styles.memberEditRow}>
+                    <Text style={styles.memberIndexLabel}>#{idx + 1}</Text>
+                    <TextInput
+                      style={styles.memberNameInput}
+                      value={m.name}
+                      onChangeText={(newName) => handleUpdateMemberName(m.id, newName)}
+                      placeholder="メンバー名（例: パパ、長男など）"
+                      placeholderTextColor={theme.textMuted}
+                    />
+                    {members.length > 1 ? (
+                      <TouchableOpacity
+                        style={styles.memberDeleteBtn}
+                        onPress={() => handleDeleteMember(m.id)}
+                      >
+                        <Text style={styles.memberDeleteBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))}
+
+                {members.length < 5 ? (
+                  <TouchableOpacity
+                    style={styles.addMemberBtn}
+                    onPress={handleAddMember}
+                  >
+                    <Text style={styles.addMemberBtnText}>＋ メンバーを追加する</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
-              <Text style={styles.fieldLabel}>🍳 調理モード（スリープ防止 ＆ チェック）</Text>
-              <View style={[styles.settingToggleRow, { marginBottom: 12 }]}>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, isCookingModeEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_cooking_mode_enabled', true, setIsCookingModeEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, isCookingModeEnabled && styles.settingOptionTextActive]}>有効</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isCookingModeEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_cooking_mode_enabled', false, setIsCookingModeEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, !isCookingModeEnabled && styles.settingOptionTextActive]}>無効</Text>
-                </TouchableOpacity>
-              </View>
+              <View style={styles.formCard}>
+                <Text style={styles.formCardHeader}>⚙️ 家事・キッチン便利機能のON/OFF</Text>
 
-              <Text style={styles.fieldLabel}>🙋 「これ食べたい！」リクエスト機能</Text>
-              <View style={styles.settingToggleRow}>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, isRequestEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_request_enabled', true, setIsRequestEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, isRequestEnabled && styles.settingOptionTextActive]}>有効</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.settingOptionBtn, !isRequestEnabled && styles.settingOptionBtnActive]}
-                  onPress={() => updateSetting('@setting_request_enabled', false, setIsRequestEnabled)}
-                >
-                  <Text style={[styles.settingOptionText, !isRequestEnabled && styles.settingOptionTextActive]}>無効</Text>
-                </TouchableOpacity>
+                <Text style={styles.fieldLabel}>🧂 買い物追加時に「基本調味料」を除外する</Text>
+                <Text style={styles.subLabelHelp}>
+                  ONにすると、醤油・みりん・酒・砂糖・油・塩などの常備調味料を買い物リストから自動除外します。
+                </Text>
+                <View style={[styles.settingToggleRow, { marginBottom: 14 }]}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isExcludeStapleSeasonings && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_exclude_staple_seasonings', true, setIsExcludeStapleSeasonings)}
+                  >
+                    <Text style={[styles.settingOptionText, isExcludeStapleSeasonings && styles.settingOptionTextActive]}>
+                      除外する (推奨)
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isExcludeStapleSeasonings && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_exclude_staple_seasonings', false, setIsExcludeStapleSeasonings)}
+                  >
+                    <Text style={[styles.settingOptionText, !isExcludeStapleSeasonings && styles.settingOptionTextActive]}>
+                      すべて追加
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.fieldLabel}>🍁 旬食材ヘッドライン</Text>
+                <View style={[styles.settingToggleRow, { marginBottom: 14 }]}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isHeadlineEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_headline_enabled', true, setIsHeadlineEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, isHeadlineEnabled && styles.settingOptionTextActive]}>表示</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isHeadlineEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_headline_enabled', false, setIsHeadlineEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, !isHeadlineEnabled && styles.settingOptionTextActive]}>非表示</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.fieldLabel}>📖 基本レシピ10品の表示</Text>
+                <View style={[styles.settingToggleRow, { marginBottom: 14 }]}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isShowDefaultRecipes && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_show_default_recipes', true, setIsShowDefaultRecipes)}
+                  >
+                    <Text style={[styles.settingOptionText, isShowDefaultRecipes && styles.settingOptionTextActive]}>表示</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isShowDefaultRecipes && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_show_default_recipes', false, setIsShowDefaultRecipes)}
+                  >
+                    <Text style={[styles.settingOptionText, !isShowDefaultRecipes && styles.settingOptionTextActive]}>非表示</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.fieldLabel}>🍳 調理モード（スリープ防止 ＆ チェック）</Text>
+                <View style={[styles.settingToggleRow, { marginBottom: 14 }]}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isCookingModeEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_cooking_mode_enabled', true, setIsCookingModeEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, isCookingModeEnabled && styles.settingOptionTextActive]}>有効</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isCookingModeEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_cooking_mode_enabled', false, setIsCookingModeEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, !isCookingModeEnabled && styles.settingOptionTextActive]}>無効</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.fieldLabel}>🙋 「これ食べたい！」リクエスト機能</Text>
+                <View style={styles.settingToggleRow}>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, isRequestEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_request_enabled', true, setIsRequestEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, isRequestEnabled && styles.settingOptionTextActive]}>有効</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.settingOptionBtn, !isRequestEnabled && styles.settingOptionBtnActive]}
+                    onPress={() => updateSetting('@setting_request_enabled', false, setIsRequestEnabled)}
+                  >
+                    <Text style={[styles.settingOptionText, !isRequestEnabled && styles.settingOptionTextActive]}>無効</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          </ScrollView>
-        </View>
-      )}
+            </ScrollView>
+          </View>
+        )}
+      </Animated.View>
 
       <View style={styles.bottomNavBar}>
         {NAV_ITEMS.map((tab) => (
@@ -2081,7 +2225,7 @@ export default function App() {
             key={tab.key}
             tab={tab}
             currentTab={currentTab}
-            onPress={() => setCurrentTab(tab.key)}
+            onPress={() => switchTabSmoothly(tab.key)}
             styles={styles}
             unboughtCount={unboughtCount}
             theme={theme}

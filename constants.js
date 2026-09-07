@@ -5,47 +5,50 @@ export const FIREBASE_PROJECT_ID = 'spunky-indigo-popcorn';
 export const AI_PROXY_API_URL = 'https://white-fog-f0b1.wagaya-no-recipe-api.workers.dev/';
 export const APP_SECRET_TOKEN = 'wagaya-recipe-2026-secret-token';
 
-// テーマ定義（Meppyの温かいカフェトーン）
+// ★ 高級感のある温かいカフェ・北欧ニュアンスパレット
 export const THEMES = {
   light: {
     isDark: false,
-    bg: '#FBF5EC',
-    cardBg: '#FFFFFF',
-    headerBg: '#F8EBD8',
-    textMain: '#3E2723',
-    textSub: '#5D4037',
-    textMuted: '#8D6E63',
-    border: '#ECDDC7',
-    borderInput: '#DECAB1',
-    inputBg: '#FFFDF9',
-    primary: '#D35400',
-    primaryLight: '#FDF0E2',
-    primaryBorder: '#F5D2B3',
-    chipBg: '#F5E7D3',
-    navBg: '#F8EBD8',
+    bg: '#FAF6F0',             // 上品な温かいアイボリー
+    cardBg: '#FFFFFF',         // 純白の浮遊カード
+    headerBg: '#FAF6F0',       // 境目のないシームレスヘッダー
+    textMain: '#2C1810',       // 深みのある上質エスプレッソ
+    textSub: '#5C4033',        // 温かいカフェモカ
+    textMuted: '#967D6D',      // 柔らかなトープ
+    border: 'rgba(230, 215, 195, 0.45)', // 極薄の空気のような境界線
+    borderInput: '#E8DCCE',
+    inputBg: '#FFFFFF',
+    primary: '#C85A17',        // 上品なテラコッタ・柿色
+    primaryLight: '#FDF3EB',   // 柔らかなピーチアイボリー
+    primaryBorder: '#F5D7C3',
+    chipBg: '#F3ECE2',         // やわらかなサンドベージュ
+    navBg: '#FAF6F0',
+    accentSage: '#5B8A72',     // 洗練されたオリーブセージ（緑）
+    accentBordeaux: '#B03A2E', // 落ち着いたルージュボルドー（赤）
     statusBar: 'dark-content',
   },
   dark: {
     isDark: true,
-    bg: '#121212',
-    cardBg: '#1E1E1E',
-    headerBg: '#1E1E1E',
-    textMain: '#F8F9FA',
-    textSub: '#CED4DA',
-    textMuted: '#ADB5BD',
-    border: '#2C2C2C',
-    borderInput: '#404040',
-    inputBg: '#2A2A2A',
-    primary: '#FF8A65',
-    primaryLight: '#3E2723',
-    primaryBorder: '#5D4037',
-    chipBg: '#2A2A2A',
-    navBg: '#1E1E1E',
+    bg: '#141210',
+    cardBg: '#1F1B18',
+    headerBg: '#141210',
+    textMain: '#F8F5F0',
+    textSub: '#D6CBC2',
+    textMuted: '#9E9085',
+    border: 'rgba(255, 255, 255, 0.08)',
+    borderInput: '#332B25',
+    inputBg: '#26201B',
+    primary: '#E07538',
+    primaryLight: '#2C1B12',
+    primaryBorder: '#4D2F1E',
+    chipBg: '#2A231D',
+    navBg: '#141210',
+    accentSage: '#76A68D',
+    accentBordeaux: '#CF5C4E',
     statusBar: 'light-content',
   },
 };
 
-// 12ヶ月の旬食材マップ
 export const MONTHLY_SEASONAL_MAP = {
   1: '白菜・大根・れんこん・ほうれん草・長ネギ・小松菜・寒ブリ・真鱈・牡蠣・みかん・いちご',
   2: '小松菜・ブロッコリー・キャベツ・大根・長ネギ・真鱈・寒ブリ・牡蠣・ヤリイカ・いちご・いよかん',
@@ -167,7 +170,10 @@ export const PRESET_DEFAULT_RECIPES = [
     isBento: false,
     isMealPrep: true,
     notes: '少し冷ますと味が染み込んでさらに美味しくなる。',
-    extractedText: 'ほっこり肉じゃが\n【材料】（2人分）\n・豚肉（または牛肉）：150g\n・じゃがいも：2個\n・玉ねぎ：1/2個\n・人参：1/2本\n・水：200ml\n・醤油：大さじ2\n・みりん：大さじ2\n・砂糖：大さじ1\n・だしの素：小さじ1/2\n【作り方】\n1. じゃがいもは乱切りにして水にさらし、玉ねぎ、人参を切る。\n2. 鍋に油を熱し、肉を炒め、野菜を加えて炒め合わせる。\n3. 水、だしの素、砂糖、みりんを加えて落とし蓋をし10分煮る。\n4. 醤油を加え、煮汁が少なくなるまでさらに7〜8分煮詰める。',
+    extractedText: 'ほっこり肉じゃが\n【材料】（2人分）\n・豚肉（または牛肉）：150g\n・じゃがいも：2個\n・玉ねぎ：1/2個\n・人参：1/2本\n・水：200ml\n・醤油：大さじ2\n・みりん：大さじ2\n・砂糖：大さじ1\n・だしの素：小さじ1/2\n【作り方】\n1. じゃがいもは乱切りにして水にさらし、玉ねぎ、人参を切る。
+2. 鍋に油を熱し、肉を炒め、野菜を加えて炒め合わせる。
+3. 水、だしの素、砂糖、みりんを加えて落とし蓋をし10分煮る。
+4. 醤油を加え、煮汁が少なくなるまでさらに7〜8分煮詰める。',
   },
   {
     id: 'preset_06',
