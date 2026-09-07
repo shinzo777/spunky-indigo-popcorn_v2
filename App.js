@@ -204,9 +204,12 @@ export default function App() {
   const theme = isDarkMode ? THEMES.dark : THEMES.light;
   const styles = useMemo(() => getStyles(theme), [theme]);
 
-  const currentMonth = new Date().getMonth() + 1;
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
   const currentSeasonIcon = getSeasonIcon(currentMonth);
   const currentSeasonalText = MONTHLY_SEASONAL_MAP[currentMonth] || '';
+  const todayDayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][now.getDay()];
+  const todayDateString = `${currentMonth}月${now.getDate()}日(${todayDayOfWeek})`;
 
   const firestoreFamilyApiUrl = useMemo(() => {
     if (!FIREBASE_PROJECT_ID || !familyId) return null;
@@ -1529,13 +1532,19 @@ export default function App() {
         {currentTab === 'home' && (
           <View style={{ flex: 1 }}>
             <View style={styles.header}>
-              <View style={styles.headerSideArea} />
+              <View style={styles.headerSideArea}>
+                <Text style={styles.headerDateText}>{todayDateString}</Text>
+              </View>
               <Image
                 source={require('./assets/logo.png')}
                 style={styles.headerLogo}
                 resizeMode="contain"
               />
-              <View style={styles.headerSideArea} />
+              <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
+                <SpringCard style={styles.headerQuickAddBtn} onPress={pickRecipeImage}>
+                  <Ionicons name="camera-outline" size={20} color={theme.primary} />
+                </SpringCard>
+              </View>
             </View>
 
             <ScrollView style={styles.homeScrollView}>
