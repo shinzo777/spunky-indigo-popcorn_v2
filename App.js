@@ -164,6 +164,12 @@ export default function App() {
     return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/recipes`;
   }, [familyId]);
 
+  // ★ 買い物リストのクラウド同期URL
+  const firestoreShoppingApiUrl = useMemo(() => {
+    if (!FIREBASE_PROJECT_ID || !familyId) return null;
+    return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/shopping/list`;
+  }, [familyId]);
+
   const allRecipes = useMemo(() => {
     if (!isShowDefaultRecipes) {
       return cloudRecipes.filter((r) => !r.isDefault);
@@ -239,10 +245,14 @@ export default function App() {
   useEffect(() => {
     if (!firestoreFamilyApiUrl) return;
     fetchRecipesFromCloud();
-    const interval = setInterval(fetchRecipesFromCloud, 12000);
+    fetchShoppingListFromCloud();
+    const interval = setInterval(() => {
+      fetchRecipesFromCloud();
+      fetchShoppingListFromCloud();
+    }, 12000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firestoreFamilyApiUrl]);
+  }, [firestoreFamilyApiUrl, firestoreShoppingApiUrl]);
 
   const updateSetting = async (key, value, setter) => {
     setter(value);
@@ -253,12 +263,40 @@ export default function App() {
     }
   };
 
+  const fetchShoppingListFromCloud = async () => {
+    if (!firestoreShoppingApiUrl) return;
+    try {
+      const res = await fetch(firestoreShoppingApiUrl);
+      if (!res.ok) return;
+      const json = await res.json();
+      const rawJson = json.fields?.data?.stringValue;
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed)) {
+          setShoppingList(parsed);
+          AsyncStorage.setItem('@shopping_list', JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {
+      console.log('Shopping sync error:', e.message);
+    }
+  };
+
   const saveShoppingList = async (newList) => {
     setShoppingList(newList);
     try {
       await AsyncStorage.setItem('@shopping_list', JSON.stringify(newList));
+      if (firestoreShoppingApiUrl) {
+        await fetch(`${firestoreShoppingApiUrl}?updateMask.fieldPaths=data`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: { data: { stringValue: JSON.stringify(newList) } },
+          }),
+        });
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Save shopping error:', e);
     }
   };
 
@@ -959,33 +997,8 @@ export default function App() {
         ? rawLines.slice(1)
         : rawLines;
 
-// ★ 人数・倍量スケーリング（材料のみに適用し、作り方の温度や時間は絶対に変更しない）
     const scaleFactor = servingSize / 2;
-    let inIngredients = false;
-
-    const recipeLines = unscaledLines.map((line) => {
-      // 材料セクションの開始判定（人数見出しを現在の選択人数に書き換え）
-      if (/材料|【材料】|〔材料〕|＜材料＞/.test(line)) {
-        inIngredients = true;
-        return line.replace(/\d+\s*(?:人分|人前)/g, `${servingSize}人分`);
-      }
-      // 作り方・手順セクションの開始判定（「1.」「①」などの工程番号も検知）
-      if (
-        /作り方|手順|【作り方】|〔作り方〕|＜作り方＞/.test(line) ||
-        /^\d+[\.\、\)]|^[①-⑳]/.test(line)
-      ) {
-        inIngredients = false;
-        return line;
-      }
-
-      // 材料エリアの中だけ数値をスケール
-      if (inIngredients) {
-        return scaleIngredientLine(line, scaleFactor);
-      }
-
-      // 作り方の手順文（170度の油、3分揚げる等）はそのまま維持！
-      return line;
-    });
+    const recipeLines = unscaledLines.map((line) => scaleIngredientLine(line, scaleFactor));
 
     return (
       <SafeAreaView style={styles.container}>
