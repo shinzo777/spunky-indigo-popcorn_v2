@@ -959,8 +959,33 @@ export default function App() {
         ? rawLines.slice(1)
         : rawLines;
 
+// ★ 人数・倍量スケーリング（材料のみに適用し、作り方の温度や時間は絶対に変更しない）
     const scaleFactor = servingSize / 2;
-    const recipeLines = unscaledLines.map((line) => scaleIngredientLine(line, scaleFactor));
+    let inIngredients = false;
+
+    const recipeLines = unscaledLines.map((line) => {
+      // 材料セクションの開始判定（人数見出しを現在の選択人数に書き換え）
+      if (/材料|【材料】|〔材料〕|＜材料＞/.test(line)) {
+        inIngredients = true;
+        return line.replace(/\d+\s*(?:人分|人前)/g, `${servingSize}人分`);
+      }
+      // 作り方・手順セクションの開始判定（「1.」「①」などの工程番号も検知）
+      if (
+        /作り方|手順|【作り方】|〔作り方〕|＜作り方＞/.test(line) ||
+        /^\d+[\.\、\)]|^[①-⑳]/.test(line)
+      ) {
+        inIngredients = false;
+        return line;
+      }
+
+      // 材料エリアの中だけ数値をスケール
+      if (inIngredients) {
+        return scaleIngredientLine(line, scaleFactor);
+      }
+
+      // 作り方の手順文（170度の油、3分揚げる等）はそのまま維持！
+      return line;
+    });
 
     return (
       <SafeAreaView style={styles.container}>
