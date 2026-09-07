@@ -1,5 +1,6 @@
-import { Platform } from 'react-native'; // ★ この1行を先頭に追加
-// 食材キーワードによるスーパー売り場判定
+import { Platform } from 'react-native';
+import { STAPLE_SEASONINGS_REGEX } from './constants';
+
 export const categorizeIngredient = (text) => {
   const t = text.toLowerCase();
   if (/玉ねぎ|ねぎ|ネギ|キャベツ|白菜|人参|にんじん|大根|トマト|きゅうり|レタス|ピーマン|じゃがいも|さつまいも|なす|茄子|きのこ|しめじ|えのき|まいたけ|椎茸|ほうれん草|もやし|ニラ|生姜|しょうが|にんにく|ニンニク|アボカド|レモン|果物|りんご|バナナ|ブロッコリー|かぼちゃ|パプリカ|青じそ|大葉|ごぼう|里芋/.test(t)) {
@@ -17,14 +18,12 @@ export const categorizeIngredient = (text) => {
   return 'other';
 };
 
-// ★ カロリー・塩分・時間・分量見出しを買い物リストから完全除外する抽出関数
-export const extractIngredientsFromRecipeText = (text) => {
+export const extractIngredientsFromRecipeText = (text, excludeStaples = false) => {
   if (!text) return [];
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   let inIngredients = false;
   const items = [];
 
-  // 除外したい単語のパターン（カロリー、塩分、時間、栄養、人数見出しなど）
   const ignorePattern = /カロリー|kcal|塩分|調理時間|所要時間|目安時間|エネルギー|糖質|脂質|たんぱく質|タンパク質|費用|難易度|人分|人前|下準備|ポイント|memo|メモ/i;
 
   for (const line of lines) {
@@ -37,12 +36,15 @@ export const extractIngredientsFromRecipeText = (text) => {
       break;
     }
     if (inIngredients) {
-      // カロリー・塩分・見出し記号などを除外
       if (ignorePattern.test(line)) continue;
-      if (/^[【〔＜\(\（\[].*?[】〕＞\)\）\]]$/.test(line)) continue; // 【タレ】などの見出し
+      if (/^[【〔＜\(\（\[].*?[】〕＞\)\）\]]$/.test(line)) continue;
 
       const cleaned = line.replace(/^[・\-\*•\d\.\s]+/, '').trim();
       if (cleaned.length > 0) {
+        if (excludeStaples && STAPLE_SEASONINGS_REGEX.test(cleaned)) {
+          continue;
+        }
+
         items.push({
           id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           name: cleaned,
@@ -53,13 +55,13 @@ export const extractIngredientsFromRecipeText = (text) => {
     }
   }
 
-  // 見出しがない場合のフォールバック
   if (items.length === 0) {
     for (const line of lines) {
       if (/^[・\-\*]/.test(line)) {
         if (ignorePattern.test(line)) continue;
         const cleaned = line.replace(/^[・\-\*•\s]+/, '').trim();
         if (cleaned.length > 0) {
+          if (excludeStaples && STAPLE_SEASONINGS_REGEX.test(cleaned)) continue;
           items.push({
             id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             name: cleaned,
@@ -74,7 +76,22 @@ export const extractIngredientsFromRecipeText = (text) => {
   return items;
 };
 
-// 1兆通り以上の高セキュリティ家族ID生成
+export const scaleIngredientLine = (line, factor = 1) => {
+  if (factor === 1) return line;
+  return line.replace(/(\d+\/\d+|\d+(?:\.\d+)?)/g, (match) => {
+    let val;
+    if (match.includes('/')) {
+      const [n, d] = match.split('/');
+      val = parseFloat(n) / parseFloat(d);
+    } else {
+      val = parseFloat(match);
+    }
+    const scaled = val * factor;
+    if (Number.isInteger(scaled)) return String(scaled);
+    return String(Math.round(scaled * 10) / 10);
+  });
+};
+
 export const generateNewFamilyId = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let part1 = '';
@@ -86,13 +103,10 @@ export const generateNewFamilyId = () => {
   return `FAM-${part1}-${part2}`;
 };
 
-// 「直近の献立」の日付表示ヘルパー（例: 今日、昨日、2日前、9/3）
 export const formatRelativeDate = (dateStr) => {
   if (!dateStr) return '';
   const target = new Date(dateStr);
   const now = new Date();
-  
-  // 日付の差分（日単位）
   const diffTime = now.setHours(0, 0, 0, 0) - target.setHours(0, 0, 0, 0);
   const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
@@ -105,14 +119,7 @@ export const formatRelativeDate = (dateStr) => {
   const d = target.getDate();
   return `${m}/${d}`;
 };
-// ★ 季節に応じた旬アイコン判定
-export const getSeasonIcon = (month) => {
-  if (month >= 3 && month <= 5) return '🌸'; // 春 (3〜5月)
-  if (month >= 6 && month <= 8) return '🌻'; // 夏 (6〜8月)
-  if (month >= 9 && month <= 11) return '🍁'; // 秋 (9〜11月)
-  return '❄️'; // 冬 (12〜2月)
-};
-// ★ スマホの高画質画像をFirestoreの1MB以内に自動圧縮する関数
+
 export const compressImageForFirestore = async (dataUri, maxDimension = 600, quality = 0.5) => {
   if (!dataUri || typeof window === 'undefined') return dataUri;
   if (!dataUri.startsWith('data:image')) return dataUri;
@@ -138,7 +145,75 @@ export const compressImageForFirestore = async (dataUri, maxDimension = 600, qua
       ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
-    img.onerror = () => resolve(dataUri); // 万が一失敗しても止まらないようにする
+    img.onerror = () => resolve(dataUri);
     img.src = dataUri;
   });
+};
+
+export const processAssetForUpload = async (asset) => {
+  if (!asset) return null;
+
+  if (asset.base64) {
+    let mime = 'image/jpeg';
+    if (asset.uri && asset.uri.toLowerCase().endsWith('.png')) mime = 'image/png';
+    return {
+      base64: asset.base64,
+      mimeType: mime,
+      dataUri: `data:${mime};base64,${asset.base64}`,
+    };
+  }
+
+  if (asset.uri) {
+    try {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+
+      const rawDataUri = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.Image !== 'undefined') {
+        const compressedUri = await new Promise((resolve) => {
+          const img = new window.Image();
+          img.onload = () => {
+            const maxDim = 800;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.6));
+          };
+          img.onerror = () => resolve(rawDataUri);
+          img.src = rawDataUri;
+        });
+
+        const [header, base64] = compressedUri.split(',');
+        const mime = header.split(';')[0].replace('data:', '');
+        return { base64, mimeType: mime, dataUri: compressedUri };
+      }
+
+      const [header, base64] = rawDataUri.split(',');
+      const mime = header.split(';')[0].replace('data:', '');
+      return { base64, mimeType: mime, dataUri: rawDataUri };
+    } catch (e) {
+      console.error('Image process error:', e);
+    }
+  }
+
+  return null;
 };
