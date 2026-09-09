@@ -1068,7 +1068,7 @@ export default function App() {
           resizeMode="contain"
         />
         <Text style={{ fontSize: 13, color: '#5C4033', fontWeight: 'bold', letterSpacing: 2 }}>
-          わが家のレシピ帳
+          今日、なに食べる？
         </Text>
       </View>
     );
