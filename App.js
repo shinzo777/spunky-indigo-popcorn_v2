@@ -78,9 +78,10 @@ const SpringCard = ({ children, onPress, style, ...props }) => {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={onPress}
+      style={style}
       {...props}
     >
-      <Animated.View style={[style, { transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View style={{ flex: 1, transform: [{ scale: scaleAnim }] }}>
         {children}
       </Animated.View>
     </Pressable>
@@ -243,25 +244,16 @@ export default function App() {
     ]).start();
   };
 
-  // サブ画面を開く（なめらかなスライドイン）
+  // サブ画面を開く（確実に表示を保証しつつスムーズに遷移）
   const openSubViewSmoothly = (viewName) => {
-    subViewFadeAnim.setValue(0);
-    subViewSlideAnim.setValue(24);
+    subViewFadeAnim.setValue(1);
+    subViewSlideAnim.setValue(0);
     setActiveSubView(viewName);
-    Animated.parallel([
-      Animated.timing(subViewFadeAnim, { toValue: 1, duration: 250, useNativeDriver: false }),
-      Animated.timing(subViewSlideAnim, { toValue: 0, duration: 250, useNativeDriver: false }),
-    ]).start();
   };
 
-  // サブ画面を閉じる（なめらかなスライドアウト）
+  // サブ画面を閉じる
   const closeSubViewSmoothly = () => {
-    Animated.parallel([
-      Animated.timing(subViewFadeAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
-      Animated.timing(subViewSlideAnim, { toValue: 24, duration: 180, useNativeDriver: false }),
-    ]).start(() => {
-      setActiveSubView(null);
-    });
+    setActiveSubView(null);
   };
 
   useEffect(() => {
@@ -772,7 +764,20 @@ export default function App() {
         base64: true,
       });
 
-      if (result.canceled || !result.assets || result.assets.length === 0) return;
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        if (Platform.OS === 'web') {
+          if (window.confirm('画像を選択せずに、手動でレシピを入力して登録しますか？')) {
+            resetForm();
+            openSubViewSmoothly('edit');
+          }
+        } else {
+          Alert.alert('レシピ登録', '画像を選択せずに手動で入力しますか？', [
+            { text: 'キャンセル', style: 'cancel' },
+            { text: '手動で入力する', onPress: () => { resetForm(); openSubViewSmoothly('edit'); } },
+          ]);
+        }
+        return;
+      }
 
       const processed = await processAssetForUpload(result.assets[0]);
       if (!processed || !processed.base64) {
@@ -1128,7 +1133,11 @@ export default function App() {
             <Text style={styles.headerTitle}>レシピ詳細</Text>
 
             <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
-              <TouchableOpacity onPress={() => handleEditPress(selectedRecipe)}>
+              <TouchableOpacity
+                onPress={() => handleEditPress(selectedRecipe)}
+                style={{ paddingVertical: 8, paddingHorizontal: 12 }}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.editButtonText}>編集</Text>
               </TouchableOpacity>
             </View>
@@ -1541,9 +1550,13 @@ export default function App() {
                 resizeMode="contain"
               />
               <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
-                <SpringCard style={styles.headerQuickAddBtn} onPress={pickRecipeImage}>
+                <TouchableOpacity
+                  style={styles.headerQuickAddBtn}
+                  activeOpacity={0.7}
+                  onPress={pickRecipeImage}
+                >
                   <Ionicons name="camera-outline" size={20} color={theme.primary} />
-                </SpringCard>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -1915,9 +1928,13 @@ export default function App() {
               }}
             />
 
-            <SpringCard style={styles.fab} onPress={pickRecipeImage}>
+            <TouchableOpacity
+              style={styles.fab}
+              activeOpacity={0.8}
+              onPress={pickRecipeImage}
+            >
               <Text style={styles.fabText}>＋ レシピ追加</Text>
-            </SpringCard>
+            </TouchableOpacity>
           </View>
         )}
 
