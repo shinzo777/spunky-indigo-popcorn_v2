@@ -802,12 +802,14 @@ export default function App() {
         setTitle(autoTitle);
         setExtractedText(text);
       } else {
-        const msg = 'レシピ情報を読み取れませんでした。手動で入力してください。';
-        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('解析案内', msg);
+        throw new Error('レシピ情報を読み取れませんでした');
       }
     } catch (e) {
       const msg = e.message;
-      Platform.OS === 'web' ? window.alert(`URL解析エラー: ${msg}`) : Alert.alert('URL解析エラー', msg);
+      // 失敗時は編集画面を閉じて元の画面に戻し、わかりやすいエラー案内を出す
+      setActiveSubView(null);
+      const friendlyMsg = `Webページの解析に失敗しました。\n(${msg})\n\n・Cloudflare WorkerがURL解析対応版に更新されているか確認してください。\n・またはスクショ画像から登録してください。`;
+      Platform.OS === 'web' ? window.alert(friendlyMsg) : Alert.alert('URL解析エラー', friendlyMsg);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -2199,7 +2201,39 @@ export default function App() {
                 </View>
               </View>
 
-              <View style={styles.formCard}>
+                            {/* ★ 機能②：レシピデータのバックアップ・エクスポートカード */}
+              <View style={[styles.formCard, styles.formCardHighlight]}>
+                <Text style={[styles.formCardHeader, { color: theme.primary }]}>
+                  💾 レシピデータのバックアップ（エクスポート）
+                </Text>
+                <Text style={styles.subLabelHelp}>
+                  わが家で記録した大切なレシピや味調整メモを、端末やクラウドに書き出して永久保存できます。機種変更時や万が一の際も安心です。
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.backupActionBtn}
+                  onPress={handleExportJsonBackup}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backupActionTitle}>📥 全レシピをファイルに書き出し (.json)</Text>
+                  <Text style={styles.backupActionDesc}>
+                    全{allRecipes.length}品の完全なレシピデータ（分量・手順・家族評価・メモ）をJSONファイルとしてダウンロード保存します。
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.backupActionBtn}
+                  onPress={handleCopyTextBackup}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backupActionTitle}>📋 全レシピの要約テキストをコピー</Text>
+                  <Text style={styles.backupActionDesc}>
+                    料理名、カテゴリ、味調整メモの一覧をクリップボードにコピーし、スマホのメモ帳やLINEにそのまま保存できます。
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+<View style={styles.formCard}>
                 <Text style={styles.formCardHeader}>🎨 画面のテーマ</Text>
                 <View style={styles.settingToggleRow}>
                   <TouchableOpacity
