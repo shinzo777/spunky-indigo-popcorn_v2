@@ -17,6 +17,8 @@ import {
   Platform,
   StatusBar,
   Linking,
+  Modal,
+  Share,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -159,6 +161,11 @@ export default function App() {
 
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ★ レシピ追加メニュー ＆ URL取り込みモーダル用ステート
+  const [isAddMenuVisible, setIsAddMenuVisible] = useState(false);
+  const [isUrlModalVisible, setIsUrlModalVisible] = useState(false);
+  const [importUrlText, setImportUrlText] = useState('');
 
   const [familyId, setFamilyId] = useState('');
   const [joinFamilyInput, setJoinFamilyInput] = useState('');
@@ -755,6 +762,111 @@ export default function App() {
     return result;
   }, [allRecipes, searchQuery, filterMode, isRequestEnabled]);
 
+
+  // ★ 機能①：Web URLからのレシピ自動抽出
+  const handleProcessUrlImport = async () => {
+    const targetUrl = importUrlText.trim();
+    if (!targetUrl) {
+      const msg = 'レシピページのURLを入力してください';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('入力エラー', msg);
+      return;
+    }
+
+    setIsUrlModalVisible(false);
+    resetForm();
+    setWebUrl(targetUrl);
+    openSubViewSmoothly('edit');
+
+    setIsLoading(true);
+    setLoadingMessage('AIがWebページからレシピを抽出中...');
+
+    try {
+      const response = await fetch(AI_PROXY_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-Token': APP_SECRET_TOKEN,
+        },
+        body: JSON.stringify({ webUrl: targetUrl }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json.error?.message || json.error || 'Webページの読み込みに失敗しました');
+      }
+
+      const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const lines = text.split('\n').filter((l) => l.trim() !== '');
+        const autoTitle = lines[0]?.replace(/[#*]/g, '').trim() || '無題のレシピ';
+        setTitle(autoTitle);
+        setExtractedText(text);
+      } else {
+        const msg = 'レシピ情報を読み取れませんでした。手動で入力してください。';
+        Platform.OS === 'web' ? window.alert(msg) : Alert.alert('解析案内', msg);
+      }
+    } catch (e) {
+      const msg = e.message;
+      Platform.OS === 'web' ? window.alert(`URL解析エラー: ${msg}`) : Alert.alert('URL解析エラー', msg);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+      setImportUrlText('');
+    }
+  };
+
+  // ★ 機能②：レシピデータのバックアップ（JSONファイル保存）
+  const handleExportJsonBackup = () => {
+    if (allRecipes.length === 0) {
+      const msg = 'エクスポートするレシピがありません';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('案内', msg);
+      return;
+    }
+
+    const dataStr = JSON.stringify(allRecipes, null, 2);
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `meppy_recipes_${dateStr}.json`;
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      window.alert(`全${allRecipes.length}品のレシピデータをファイルに書き出しました！\n（ダウンロードフォルダをご確認ください）`);
+    } else {
+      Share.share({
+        title: filename,
+        message: dataStr,
+      });
+    }
+  };
+
+  // ★ 機能②：レシピ一覧テキストのコピー
+  const handleCopyTextBackup = async () => {
+    if (allRecipes.length === 0) return;
+
+    let textSummary = '【わが家のレシピ帳 Meppy バックアップ】\n\n';
+    allRecipes.forEach((r, idx) => {
+      textSummary += `■ ${idx + 1}. ${r.title} (${r.category || 'その他'})\n`;
+      if (r.notes) textSummary += `  味調整メモ: ${r.notes}\n`;
+      if (r.webUrl) textSummary += `  URL: ${r.webUrl}\n`;
+      textSummary += `\n`;
+    });
+
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(textSummary);
+      window.alert('全レシピの要約テキストをクリップボードにコピーしました！\n（メモ帳などにそのまま貼り付けできます）');
+    } else {
+      Share.share({
+        title: 'わが家のレシピ一覧',
+        message: textSummary,
+      });
+    }
+  };
+
   const pickRecipeImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -1068,7 +1180,7 @@ export default function App() {
           resizeMode="contain"
         />
         <Text style={{ fontSize: 13, color: '#5C4033', fontWeight: 'bold', letterSpacing: 2 }}>
-          今日、なに食べる？
+          わが家のレシピ帳
         </Text>
       </View>
     );
@@ -1553,7 +1665,7 @@ export default function App() {
                 <TouchableOpacity
                   style={styles.headerQuickAddBtn}
                   activeOpacity={0.7}
-                  onPress={pickRecipeImage}
+                  onPress={() => setIsAddMenuVisible(true)}
                 >
                   <Ionicons name="camera-outline" size={20} color={theme.primary} />
                 </TouchableOpacity>
@@ -1931,7 +2043,7 @@ export default function App() {
             <TouchableOpacity
               style={styles.fab}
               activeOpacity={0.8}
-              onPress={pickRecipeImage}
+              onPress={() => setIsAddMenuVisible(true)}
             >
               <Text style={styles.fabText}>＋ レシピ追加</Text>
             </TouchableOpacity>
@@ -2244,6 +2356,130 @@ export default function App() {
           </View>
         )}
       </Animated.View>
+
+
+      {/* =============================================================
+          ★ モーダル①：レシピ追加方法の選択メニュー
+      ============================================================= */}
+      <Modal
+        visible={isAddMenuVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsAddMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsAddMenuVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>レシピの登録方法</Text>
+            <Text style={styles.modalSubTitle}>お好みの方法でレシピを取り込めます</Text>
+
+            <TouchableOpacity
+              style={styles.modalChoiceBtn}
+              onPress={() => {
+                setIsAddMenuVisible(false);
+                pickRecipeImage();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalChoiceIcon}>📸</Text>
+              <View>
+                <Text style={styles.modalChoiceTitle}>写真・スクショから登録</Text>
+                <Text style={styles.modalChoiceDesc}>Instagramや本のスクショをAIが自動文字起こし</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalChoiceBtn}
+              onPress={() => {
+                setIsAddMenuVisible(false);
+                setImportUrlText('');
+                setIsUrlModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalChoiceIcon}>🌐</Text>
+              <View>
+                <Text style={styles.modalChoiceTitle}>WebのURLから登録</Text>
+                <Text style={styles.modalChoiceDesc}>クックパッドやNadiaのリンクからAIが自動抽出</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalChoiceBtn}
+              onPress={() => {
+                setIsAddMenuVisible(false);
+                resetForm();
+                openSubViewSmoothly('edit');
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalChoiceIcon}>✍️</Text>
+              <View>
+                <Text style={styles.modalChoiceTitle}>手動で入力して登録</Text>
+                <Text style={styles.modalChoiceDesc}>画像なしで自由に材料や手順を直接メモ</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setIsAddMenuVisible(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>キャンセル</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* =============================================================
+          ★ モーダル②：Web URL入力モーダル
+      ============================================================= */}
+      <Modal
+        visible={isUrlModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsUrlModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>🌐 Webからレシピを取り込む</Text>
+            <Text style={styles.modalSubTitle}>
+              クックパッド、Nadia、クラシル、料理ブログなどのURLを貼り付けてください
+            </Text>
+
+            <TextInput
+              style={styles.modalInput}
+              value={importUrlText}
+              onChangeText={setImportUrlText}
+              placeholder="https://..."
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              keyboardType="url"
+              clearButtonMode="while-editing"
+            />
+
+            <TouchableOpacity
+              style={styles.modalSubmitBtn}
+              onPress={handleProcessUrlImport}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.modalSubmitBtnText}>🤖 AIでレシピを解析する</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setIsUrlModalVisible(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>キャンセル</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <View style={styles.bottomNavBar}>
         {NAV_ITEMS.map((tab) => (
