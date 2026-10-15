@@ -10,58 +10,43 @@ export const CALENDAR_RETENTION_DAYS = 366;
 export const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
 // -------------------------------------------------------------
-// 要件1：出典プラットフォーム定義
+// 要件1：出典プラットフォーム定義（操作・見出しは線画アイコン Ionicons に統一）
 // -------------------------------------------------------------
 export const SOURCE_PLATFORMS = {
   youtube: {
     key: 'youtube',
     label: 'YouTube',
-    icon: '▶️',
     ionicon: 'logo-youtube',
-    accentColor: '#DC2626',
-    bgLight: '#FEF2F2',
-    borderLight: '#FECACA',
-    actionLabel: '元のYouTube動画を見る',
+    accentColor: '#C85A17',
+    actionLabel: '元の動画を見る',
   },
   instagram: {
     key: 'instagram',
     label: 'Instagram',
-    icon: '📸',
     ionicon: 'logo-instagram',
-    accentColor: '#DB2777',
-    bgLight: '#FDF2F8',
-    borderLight: '#FBCFE8',
-    actionLabel: '元のInstagram投稿を見る',
+    accentColor: '#C85A17',
+    actionLabel: '元の投稿を見る',
   },
   x: {
     key: 'x',
-    label: 'X (旧Twitter)',
-    icon: '𝕏',
+    label: 'X',
     ionicon: 'logo-twitter',
-    accentColor: '#1D4ED8',
-    bgLight: '#EFF6FF',
-    borderLight: '#BFDBFE',
-    actionLabel: '元のX投稿を見る',
+    accentColor: '#C85A17',
+    actionLabel: '元の投稿を見る',
   },
   web: {
     key: 'web',
-    label: 'Webレシピ',
-    icon: '🌐',
+    label: 'Web',
     ionicon: 'globe-outline',
     accentColor: '#C85A17',
-    bgLight: '#FDF3EB',
-    borderLight: '#F5D7C3',
-    actionLabel: '元のレシピ記事を見る',
+    actionLabel: '元レシピを見る',
   },
   manual: {
     key: 'manual',
-    label: '手動・オリジナル',
-    icon: '✍️',
+    label: 'オリジナル',
     ionicon: 'create-outline',
     accentColor: '#5B8A72',
-    bgLight: '#F3ECE2',
-    borderLight: '#E8DCCE',
-    actionLabel: '元のページを見る',
+    actionLabel: '元ページを見る',
   },
 };
 
@@ -104,26 +89,26 @@ export const RECIPE_EXTRACTION_SYSTEM_PROMPT = `あなたはレシピ考案者�
   ]
 }`;
 
-// ★ 高級感のある温かいカフェ・北欧ニュアンスパレット
+// ★ 温かみのある配色はそのままに、補足文字の明暗差（コントラスト）と枠線を整理したパレット
 export const THEMES = {
   light: {
     isDark: false,
-    bg: '#FAF6F0',             // 上品な温かいアイボリー
-    cardBg: '#FFFFFF',         // 純白の浮遊カード
-    headerBg: '#FAF6F0',       // 境目のないシームレスヘッダー
-    textMain: '#2C1810',       // 深みのある上質エスプレッソ
-    textSub: '#5C4033',        // 温かいカフェモカ
-    textMuted: '#967D6D',      // 柔らかなトープ
-    border: 'rgba(230, 215, 195, 0.45)', // 極薄の空気のような境界線
-    borderInput: '#E8DCCE',
+    bg: '#FAF6F0',             // 温かいアイボリー
+    cardBg: '#FFFFFF',         // 純白カード
+    headerBg: '#FAF6F0',       // シームレスヘッダー
+    textMain: '#26150E',       // 深みのあるエスプレッソ（見出し・本文用）
+    textSub: '#4E3629',        // カフェモカ（中見出し・ラベル用）
+    textMuted: '#6E5648',      // 補足文字もくっきり読める濃いめのトープ（旧 #967D6D から明暗差を改善）
+    border: '#E5DACB',         // 薄い実線ボーダー（旧 rgba から視認性を安定化）
+    borderInput: '#D6C7B5',    // 入力欄・補助ボタン用の枠線
     inputBg: '#FFFFFF',
-    primary: '#C85A17',        // 上品なテラコッタ・柿色
-    primaryLight: '#FDF3EB',   // 柔らかなピーチアイボリー
-    primaryBorder: '#F5D7C3',
-    chipBg: '#F3ECE2',         // やわらかなサンドベージュ
+    primary: '#C85A17',        // 主要操作用のテラコッタ・オレンジ
+    primaryLight: '#FDF3EB',   // 記録あり日・選択背景用の淡いピーチ
+    primaryBorder: '#EFCAB0',
+    chipBg: '#F2EBE1',         // 控えめなサンドベージュ
     navBg: '#FAF6F0',
-    accentSage: '#5B8A72',     // 洗練されたオリーブセージ（緑）
-    accentBordeaux: '#B03A2E', // 落ち着いたルージュボルドー（赤）
+    accentSage: '#4A7860',     // 落ち着いたオリーブセージ
+    accentBordeaux: '#B03A2E', // 削除・警告用のボルドー
     statusBar: 'dark-content',
   },
   dark: {
@@ -132,14 +117,14 @@ export const THEMES = {
     cardBg: '#1F1B18',
     headerBg: '#141210',
     textMain: '#F8F5F0',
-    textSub: '#D6CBC2',
-    textMuted: '#9E9085',
-    border: 'rgba(255, 255, 255, 0.08)',
-    borderInput: '#332B25',
+    textSub: '#DDD2C8',
+    textMuted: '#B5A89E',      // ダーク背景でも読みやすい明るさに改善
+    border: '#302924',
+    borderInput: '#40362F',
     inputBg: '#26201B',
     primary: '#E07538',
-    primaryLight: '#2C1B12',
-    primaryBorder: '#4D2F1E',
+    primaryLight: '#2C1E15',
+    primaryBorder: '#523422',
     chipBg: '#2A231D',
     navBg: '#141210',
     accentSage: '#76A68D',
@@ -164,12 +149,13 @@ export const MONTHLY_SEASONAL_MAP = {
 };
 
 export const getSeasonIcon = (month) => {
-  if (month >= 3 && month <= 5) return '🌸';
-  if (month >= 6 && month <= 8) return '🌻';
-  if (month >= 9 && month <= 11) return '🍁';
-  return '❄️';
+  if (month >= 3 && month <= 5) return 'leaf-outline';
+  if (month >= 6 && month <= 8) return 'sunny-outline';
+  if (month >= 9 && month <= 11) return 'nutrition-outline';
+  return 'snow-outline';
 };
 
+// 絵文字は料理写真の仮画像（プレースホルダー）用として保持
 export const CATEGORIES = [
   { key: '主菜', label: '主菜', icon: '🥩' },
   { key: '副菜', label: '副菜', icon: '🥗' },
@@ -189,16 +175,16 @@ export const DEFAULT_MEMBERS = [
 export const RATING_STARS = ['☆☆☆', '★☆☆', '★★☆', '★★★'];
 
 export const SHOPPING_AISLES = [
-  { key: 'produce', label: '🥬 野菜・果物' },
-  { key: 'meat', label: '🥩 肉・魚' },
-  { key: 'dairy', label: '🥛 日配・大豆・卵' },
-  { key: 'seasoning', label: '🧂 調味料・乾物' },
-  { key: 'other', label: '🏷️ その他・日用品' },
+  { key: 'produce', label: '野菜・果物', icon: 'nutrition-outline' },
+  { key: 'meat', label: '肉・魚', icon: 'fish-outline' },
+  { key: 'dairy', label: '日配・大豆・卵', icon: 'egg-outline' },
+  { key: 'seasoning', label: '調味料・乾物', icon: 'flask-outline' },
+  { key: 'other', label: 'その他・日用品', icon: 'pricetag-outline' },
 ];
 
 export const STAPLE_SEASONINGS_REGEX = /醤油|しょうゆ|みりん|料理酒|酒|砂糖|さとう|塩|しお|胡椒|こしょう|コショウ|サラダ油|ごま油|オリーブオイル|油|米油|味噌|みそ|酢|す|だしの素|ほんだし|コンソメ|鶏がらスープ|片栗粉|小麦粉/;
 
-// ★ ボトムナビゲーションバーに「カレンダー」を追加
+// ボトムナビゲーションバー
 export const NAV_ITEMS = [
   { key: 'home', iconName: 'home-outline', activeIconName: 'home', label: 'ホーム' },
   { key: 'recipes', iconName: 'book-outline', activeIconName: 'book', label: 'レシピ帳' },

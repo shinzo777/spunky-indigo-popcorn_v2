@@ -14,7 +14,6 @@ import { detectSourcePlatform, getOfficialEmbedInfo } from '../helpers';
 
 // =============================================================
 // 要件3-3：アプリ内ブラウザ（SFSafariViewController / Chrome Custom Tabs）での遷移
-// 元サイトの1PV（Google Analytics等のインサイト）を確実にカウントしつつMeppy内で開く
 // =============================================================
 export const openCreatorUrlInAppBrowser = async (url, primaryColor = '#C85A17') => {
   if (!url || !url.trim()) return;
@@ -51,7 +50,8 @@ export const openCreatorUrlInAppBrowser = async (url, primaryColor = '#C85A17') 
 };
 
 // =============================================================
-// 要件3-1：ヘッダー直下の「クリエイター・クレジットカード」 (CreatorCreditCard)
+// 要件3-1：レシピ詳細上部を重くしないコンパクトな「クリエイター・クレジットカード」
+// オレンジ塗りつぶしを避け、白背景＋薄い枠線の洗練された横並びバーに整理
 // =============================================================
 export const CreatorCreditCard = ({
   sourceUrl,
@@ -69,13 +69,12 @@ export const CreatorCreditCard = ({
       ? sourcePlatform
       : detectSourcePlatform(effectiveUrl);
 
-  // URLもクリエイター名も存在しない完全な手動レシピの場合は非表示
   if (!effectiveUrl && !creatorName) {
     return null;
   }
 
   const platformConfig = SOURCE_PLATFORMS[effectivePlatform] || SOURCE_PLATFORMS.web;
-  const displayCreator = creatorName && creatorName.trim() ? creatorName.trim() : 'レシピ考案者';
+  const displayCreator = creatorName && creatorName.trim() ? creatorName.trim() : platformConfig.label;
 
   const handlePress = () => {
     if (onOpenUrl) {
@@ -88,74 +87,50 @@ export const CreatorCreditCard = ({
   return (
     <View style={styles.creatorCreditCard}>
       <View style={styles.creatorCreditTopRow}>
-        <View
-          style={[
-            styles.creatorPlatformIconWrap,
-            { backgroundColor: theme?.isDark ? '#2C221E' : platformConfig.bgLight },
-          ]}
-        >
+        <View style={styles.creatorPlatformIconWrap}>
           <Ionicons
             name={platformConfig.ionicon}
-            size={22}
-            color={platformConfig.accentColor}
+            size={18}
+            color={theme?.primary || '#C85A17'}
           />
         </View>
 
         <View style={styles.creatorCreditInfoCol}>
           <View style={styles.creatorBadgeRow}>
-            <View
-              style={[
-                styles.creatorPlatformBadge,
-                { borderColor: platformConfig.accentColor },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.creatorPlatformBadgeText,
-                  { color: platformConfig.accentColor },
-                ]}
-              >
-                {platformConfig.icon} {platformConfig.label}
-              </Text>
-            </View>
+            <Text style={styles.creatorNameText} numberOfLines={1}>
+              考案者: {displayCreator} さん
+            </Text>
             {!isScrapedAllowed ? (
               <View style={styles.bookmarkModeBadge}>
-                <Text style={styles.bookmarkModeBadgeText}>🔖 ブックマーク保護</Text>
+                <Text style={styles.bookmarkModeBadgeText}>ブックマーク</Text>
               </View>
             ) : null}
           </View>
 
-          <Text style={styles.creatorNameText} numberOfLines={1}>
-            考案者：{displayCreator} さん
-          </Text>
-
           {ogpTitle ? (
             <Text style={styles.creatorOgpTitleText} numberOfLines={1}>
-              出典元：{ogpTitle}
+              {ogpTitle}
             </Text>
           ) : null}
         </View>
-      </View>
 
-      {effectiveUrl ? (
-        <TouchableOpacity
-          style={[
-            styles.creatorCreditCtaBtn,
-            { backgroundColor: platformConfig.accentColor },
-          ]}
-          onPress={handlePress}
-          activeOpacity={0.82}
-        >
-          <Ionicons name="open-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.creatorCreditCtaBtnText}>元のレシピ・動画を見る</Text>
-        </TouchableOpacity>
-      ) : null}
+        {effectiveUrl ? (
+          <TouchableOpacity
+            style={styles.creatorCreditCtaBtn}
+            onPress={handlePress}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.creatorCreditCtaBtnText}>元レシピ</Text>
+            <Ionicons name="open-outline" size={13} color={theme?.primary || '#C85A17'} style={{ marginLeft: 3 }} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 };
 
 // =============================================================
-// 要件3-4：SNS公式埋め込み（Embed）プレイヤー（YouTube / Instagram対応）
+// 要件3-4：SNS公式埋め込み（Embed）プレイヤー（デフォルトは折りたたみで上部をスッキリ保つ）
 // =============================================================
 export const OfficialSocialEmbed = ({
   sourceUrl,
@@ -165,14 +140,15 @@ export const OfficialSocialEmbed = ({
   theme,
   onOpenUrl,
 }) => {
-  const [activeTab, setActiveTab] = useState('embed'); // 'embed' | 'summary'
+  // 詳細画面の上部が重くならないよう、初期状態はコンパクトな展開バーにし、タップで埋め込みを展開
+  const [isExpanded, setIsExpanded] = useState(false);
   const embedInfo = getOfficialEmbedInfo(sourceUrl, sourcePlatform);
 
   if (!embedInfo) return null;
 
   const isYouTube = embedInfo.platform === 'youtube';
   const platformLabel = isYouTube ? 'YouTube公式プレイヤー' : 'Instagram公式埋め込み';
-  const displayCreator = creatorName && creatorName.trim() ? creatorName.trim() : 'クリエイター';
+  const displayCreator = creatorName && creatorName.trim() ? creatorName.trim() : '考案者';
 
   const handleOpenInApp = () => {
     if (onOpenUrl) {
@@ -182,7 +158,6 @@ export const OfficialSocialEmbed = ({
     }
   };
 
-  // ネイティブ環境で react-native-webview が利用可能か動的チェック
   let NativeWebView = null;
   if (Platform.OS !== 'web') {
     try {
@@ -195,51 +170,36 @@ export const OfficialSocialEmbed = ({
 
   return (
     <View style={styles.socialEmbedContainer}>
-      <View style={styles.socialEmbedTabRow}>
-        <TouchableOpacity
-          style={[
-            styles.socialEmbedTabBtn,
-            activeTab === 'embed' && styles.socialEmbedTabBtnActive,
-          ]}
-          onPress={() => setActiveTab('embed')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.socialEmbedTabText,
-              activeTab === 'embed' && styles.socialEmbedTabTextActive,
-            ]}
-          >
-            🎬 {platformLabel}
+      <TouchableOpacity
+        style={styles.socialEmbedToggleRow}
+        onPress={() => setIsExpanded(!isExpanded)}
+        activeOpacity={0.75}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <Ionicons
+            name={isYouTube ? 'play-circle-outline' : 'videocam-outline'}
+            size={17}
+            color={theme?.primary || '#C85A17'}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.socialEmbedToggleText}>
+            {platformLabel}を{isExpanded ? '閉じる' : '開く'}
           </Text>
-        </TouchableOpacity>
+        </View>
+        <Ionicons
+          name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+          size={16}
+          color={theme?.textMuted || '#6E5648'}
+        />
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.socialEmbedTabBtn,
-            activeTab === 'summary' && styles.socialEmbedTabBtnActive,
-          ]}
-          onPress={() => setActiveTab('summary')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.socialEmbedTabText,
-              activeTab === 'summary' && styles.socialEmbedTabTextActive,
-            ]}
-          >
-            📖 プレイヤーを折りたたむ
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {activeTab === 'embed' ? (
+      {isExpanded ? (
         <View style={styles.socialEmbedBody}>
           {Platform.OS === 'web' ? (
             <View
               style={[
                 styles.socialEmbedFrameWrapper,
-                !isYouTube && { height: 440 },
+                !isYouTube && { height: 400 },
               ]}
             >
               {React.createElement('iframe', {
@@ -249,7 +209,7 @@ export const OfficialSocialEmbed = ({
                   width: '100%',
                   height: '100%',
                   border: 'none',
-                  borderRadius: '14px',
+                  borderRadius: '8px',
                 },
                 allow:
                   'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share',
@@ -260,12 +220,12 @@ export const OfficialSocialEmbed = ({
             <View
               style={[
                 styles.socialEmbedFrameWrapper,
-                !isYouTube && { height: 440 },
+                !isYouTube && { height: 400 },
               ]}
             >
               <NativeWebView
                 source={{ uri: embedInfo.embedUrl }}
-                style={{ flex: 1, borderRadius: 14 }}
+                style={{ flex: 1, borderRadius: 8 }}
                 allowsInlineMediaPlayback
                 javaScriptEnabled
                 domStorageEnabled
@@ -273,25 +233,20 @@ export const OfficialSocialEmbed = ({
             </View>
           ) : (
             <View style={styles.socialEmbedFallbackBox}>
-              <Text style={styles.socialEmbedFallbackTitle}>
-                {isYouTube ? '▶️ YouTube公式動画' : '📸 Instagram公式投稿'}（{displayCreator}さん）
-              </Text>
               <Text style={styles.socialEmbedFallbackDesc}>
-                アプリ内ブラウザで公式プレイヤーを開き、クリエイターの再生数・インサイトへ直接還元します。
+                アプリ内ブラウザで{displayCreator}さんの公式動画・投稿を再生します。
               </Text>
               <TouchableOpacity
                 style={styles.socialEmbedOpenBtn}
                 onPress={handleOpenInApp}
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
-                <Text style={styles.socialEmbedOpenBtnText}>
-                  アプリ内プレイヤーで再生する
-                </Text>
+                <Text style={styles.socialEmbedOpenBtnText}>公式プレイヤーを開く</Text>
               </TouchableOpacity>
             </View>
           )}
           <Text style={styles.socialEmbedCaption}>
-            ※公式埋め込みプレイヤーでの再生は、{displayCreator}さんの公式再生数・インサイトに直結します
+            公式プレイヤーでの再生は{displayCreator}さんの再生数・インサイトに還元されます
           </Text>
         </View>
       ) : null}
@@ -300,7 +255,7 @@ export const OfficialSocialEmbed = ({
 };
 
 // =============================================================
-// 要件3-2：調理手順エリア下部の「コツ・写真確認」誘導バナー (CreatorTipsBanner)
+// 要件3-2：調理手順エリア下部の「コツ・写真確認」誘導バナー
 // =============================================================
 export const CreatorTipsBanner = ({
   sourceUrl,
@@ -332,19 +287,27 @@ export const CreatorTipsBanner = ({
 
   return (
     <View style={styles.creatorTipsBanner}>
-      <Text style={styles.creatorTipsBannerText}>
-        💡 {displayCreator}さん直伝の『失敗しないコツ』や工程写真・動画は元記事でチェック！
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: effectiveUrl ? 10 : 0 }}>
+        <Ionicons
+          name="bulb-outline"
+          size={17}
+          color={theme?.primary || '#C85A17'}
+          style={{ marginRight: 6, marginTop: 1 }}
+        />
+        <Text style={styles.creatorTipsBannerText}>
+          {displayCreator}さん直伝の「失敗しないコツ」や工程写真・動画は元記事でチェック！
+        </Text>
+      </View>
       {effectiveUrl ? (
         <TouchableOpacity
           style={styles.creatorTipsBannerBtn}
           onPress={handlePress}
-          activeOpacity={0.82}
+          activeOpacity={0.75}
         >
-          <Ionicons name="book-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.creatorTipsBannerBtnText}>
             元記事・動画で詳しいコツを見る
           </Text>
+          <Ionicons name="open-outline" size={14} color={theme?.primary || '#C85A17'} style={{ marginLeft: 4 }} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -386,9 +349,14 @@ export const CreatorSupportActionCard = ({
   return (
     <View style={styles.creatorSupportCard}>
       <View style={styles.creatorSupportHeaderRow}>
-        <Text style={styles.creatorSupportEmoji}>🙌</Text>
+        <Ionicons
+          name="heart-outline"
+          size={18}
+          color={theme?.accentSage || '#4A7860'}
+          style={{ marginRight: 8, marginTop: 1 }}
+        />
         <Text style={styles.creatorSupportMessage}>
-          {displayCreator}さんの元投稿に『いいね』や保存をして応援しよう！
+          {displayCreator}さんの元投稿に「いいね」や保存をして応援しよう！
         </Text>
       </View>
 
@@ -396,9 +364,9 @@ export const CreatorSupportActionCard = ({
         <TouchableOpacity
           style={styles.creatorSupportBtn}
           onPress={handlePress}
-          activeOpacity={0.85}
+          activeOpacity={0.8}
         >
-          <Ionicons name={platformConfig.ionicon} size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Ionicons name={platformConfig.ionicon} size={15} color={theme?.accentSage || '#4A7860'} style={{ marginRight: 6 }} />
           <Text style={styles.creatorSupportBtnText}>
             元のSNS投稿・記事を開く
           </Text>

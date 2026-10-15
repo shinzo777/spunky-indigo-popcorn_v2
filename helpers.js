@@ -10,9 +10,6 @@ const CIRCLED_NUMBERS = [
 // カレンダー・調理履歴用ヘルパー関数群（直近1年分保管・月別表示対応）
 // =============================================================
 
-/**
- * DateオブジェクトまたはISO文字列をローカルタイムゾーンの 'YYYY-MM-DD' 形式に変換
- */
 export const toDateKey = (dateInput = new Date()) => {
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (Number.isNaN(d.getTime())) {
@@ -28,9 +25,6 @@ export const toDateKey = (dateInput = new Date()) => {
   return `${y}-${m}-${day}`;
 };
 
-/**
- * 'YYYY-MM-DD' を「M月D日(曜)」の日本語表記に変換
- */
 export const formatDateKeyJapanese = (dateKey) => {
   if (!dateKey || typeof dateKey !== 'string') return '';
   const parts = dateKey.split('-').map((n) => parseInt(n, 10));
@@ -41,9 +35,6 @@ export const formatDateKeyJapanese = (dateKey) => {
   return `${m}月${d}日(${w})`;
 };
 
-/**
- * 直近1年分（366日）より古い調理履歴を自動除外して返す
- */
 export const pruneCookingHistoryOneYear = (historyList = []) => {
   if (!Array.isArray(historyList)) return [];
   const now = new Date();
@@ -62,13 +53,10 @@ export const pruneCookingHistoryOneYear = (historyList = []) => {
     });
 };
 
-/**
- * 指定された年・月（monthIndex: 0〜11）の月間カレンダーグリッド（週ごとの配列）を生成
- */
 export const generateCalendarMonthWeeks = (year, monthIndex) => {
   const firstDay = new Date(year, monthIndex, 1);
   const lastDay = new Date(year, monthIndex + 1, 0);
-  const startDow = firstDay.getDay(); // 0 (Sun) - 6 (Sat)
+  const startDow = firstDay.getDay();
   const totalDays = lastDay.getDate();
 
   const cells = [];
@@ -96,8 +84,72 @@ export const generateCalendarMonthWeeks = (year, monthIndex) => {
 };
 
 // =============================================================
+// レシピ詳細画面の整理用：材料（「食材名／分量」2列）と手順（工程ごと）に構造化
+// =============================================================
+export const parseStructuredRecipeSections = (extractedText = '', recipeTitle = '', scaleFactor = 1) => {
+  const rawLines = (extractedText || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const lines =
+    rawLines.length > 0 &&
+    recipeTitle &&
+    rawLines[0].replace(/[#*]/g, '').trim() === recipeTitle.trim()
+      ? rawLines.slice(1)
+      : rawLines;
+
+  const ingredients = [];
+  const steps = [];
+  let mode = 'none'; // 'ingredients' | 'steps' | 'none'
+
+  for (const line of lines) {
+    if (/^(?:【?材料】?|〔材料〕|＜材料＞)/.test(line)) {
+      mode = 'ingredients';
+      continue;
+    }
+    if (/^(?:【?(?:作り方|手順)】?|〔(?:作り方|手順)〕|＜(?:作り方|手順)＞)/.test(line)) {
+      mode = 'steps';
+      continue;
+    }
+
+    if (mode === 'ingredients' || (mode === 'none' && /^[・\-\*•]/.test(line))) {
+      mode = 'ingredients';
+      const cleaned = line.replace(/^[・\-\*•\s]+/, '').trim();
+      if (!cleaned) continue;
+      const splitMatch = cleaned.match(/^(.+?)[：:]\s*(.+)$/);
+      if (splitMatch) {
+        const name = splitMatch[1].trim();
+        const rawAmount = splitMatch[2].trim();
+        ingredients.push({
+          name,
+          amount: scaleIngredientLine(rawAmount, scaleFactor),
+        });
+      } else {
+        ingredients.push({
+          name: scaleIngredientLine(cleaned, scaleFactor),
+          amount: '',
+        });
+      }
+    } else {
+      mode = 'steps';
+      const stepBody = line
+        .replace(/^(?:step\s*\d+|手順\s*\d+|\d+[\.\、\)\s]+|[①-⑳]\s*)/i, '')
+        .trim();
+      if (stepBody) {
+        steps.push({
+          stepNumber: steps.length + 1,
+          text: stepBody,
+        });
+      }
+    }
+  }
+
+  return { ingredients, steps };
+};
+
+// =============================================================
 // 要件1：URLのドメインから sourcePlatform を自動判定
-// 'youtube' | 'instagram' | 'x' | 'web' | 'manual'
 // =============================================================
 export const detectSourcePlatform = (url) => {
   if (!url || typeof url !== 'string' || !url.trim()) {
@@ -134,9 +186,6 @@ export const detectSourcePlatform = (url) => {
   }
 };
 
-// =============================================================
-// 要件1：URLのドメイン・パスからデフォルトのサイト/アカウント名を推定（フォールバック用）
-// =============================================================
 export const inferCreatorNameFromUrl = (url) => {
   if (!url || typeof url !== 'string' || !url.trim()) return null;
   let normalized = url.trim();
@@ -166,7 +215,7 @@ export const inferCreatorNameFromUrl = (url) => {
       return null;
     }
     if (host.includes('cookpad.com')) return 'クックパッド';
-    if (host.includes('oceans-nadia.com')) return 'Nadia (ナディア)';
+    if (host.includes('oceans-nadia.com')) return 'Nadia';
     if (host.includes('kurashiru.com')) return 'クラシル';
     if (host.includes('delishkitchen.tv')) return 'DELISH KITCHEN';
     if (host.includes('sirogohan.com')) return '白ごはん.com';
@@ -180,9 +229,6 @@ export const inferCreatorNameFromUrl = (url) => {
   }
 };
 
-// =============================================================
-// 要件1：既存レシピデータとの後方互換性を保つ正規化関数
-// =============================================================
 export const normalizeRecipeRecord = (recipe) => {
   if (!recipe) return recipe;
   const rawSourceUrl = (recipe.sourceUrl ?? recipe.webUrl ?? '').trim();
@@ -201,7 +247,7 @@ export const normalizeRecipeRecord = (recipe) => {
   return {
     ...recipe,
     sourceUrl: rawSourceUrl,
-    webUrl: rawSourceUrl, // 既存フィールドとの互換維持
+    webUrl: rawSourceUrl,
     sourcePlatform,
     creatorName: creatorName || null,
     ogpTitle,
@@ -209,9 +255,6 @@ export const normalizeRecipeRecord = (recipe) => {
   };
 };
 
-// =============================================================
-// 要件2：調理手順の1行超要約インデックス化（最大40文字程度）
-// =============================================================
 export const formatStepAsConciseIndex = (rawStep, index) => {
   if (!rawStep) return '';
   const prefix = CIRCLED_NUMBERS[index] || `${index + 1}.`;
@@ -220,7 +263,6 @@ export const formatStepAsConciseIndex = (rawStep, index) => {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // コツ・ポイント等の補足文が混入している場合は最初の文のみ抽出してインデックス化
   const sentenceParts = cleaned.split(/[。！？]/).filter((s) => s.trim().length > 0);
   if (sentenceParts.length > 0) {
     cleaned = sentenceParts[0].trim();
@@ -234,14 +276,10 @@ export const formatStepAsConciseIndex = (rawStep, index) => {
   return `${prefix} ${cleaned}`;
 };
 
-// =============================================================
-// 要件2：AI抽出レスポンス（JSONまたはテキスト）の解析・正規化
-// =============================================================
 export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMeta = {}) => {
   const sourcePlatform = detectSourcePlatform(sourceUrl);
   const fallbackCreator = inferCreatorNameFromUrl(sourceUrl);
 
-  // API側で明示的に isScrapedAllowed === false が返された場合（ブックマークモード）
   if (apiMeta && apiMeta.isScrapedAllowed === false) {
     const fallbackTitle = apiMeta.ogpTitle || 'ブックマークしたレシピ';
     return {
@@ -261,7 +299,6 @@ export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMe
     return null;
   }
 
-  // JSONオブジェクトの抽出を試みる
   const jsonMatch = rawResponseText.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
@@ -329,11 +366,10 @@ export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMe
         extractedText: formattedText,
       };
     } catch (e) {
-      // JSONパース失敗時は下のテキスト正規化フォールバックへ進む
+      // Fallback below
     }
   }
 
-  // 従来のプレーンテキスト形式が返ってきた場合でも、著作権配慮（40文字インデックス要約）を適用する
   const lines = rawResponseText
     .split('\n')
     .map((l) => l.trim())
@@ -347,13 +383,11 @@ export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMe
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // 考案者・著者行があれば抽出
     const creatorMatch = line.match(/^(?:考案者|著者|作者|クリエイター|チャンネル名|アカウント)[：:]\s*(.+)$/);
     if (creatorMatch) {
       detectedCreator = creatorMatch[1].trim();
       continue;
     }
-    // コツ・ポイント・コラム行は除外（元サイトへの動機を残すため）
     if (/^(?:【?(?:コツ|ポイント|アドバイス|コラム|エピソード)】?)/.test(line)) {
       break;
     }
@@ -383,9 +417,6 @@ export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMe
   };
 };
 
-// =============================================================
-// 要件3-4：YouTube / Instagram 公式埋め込み（Embed）URLの生成
-// =============================================================
 export const getOfficialEmbedInfo = (sourceUrl, sourcePlatform) => {
   if (!sourceUrl || typeof sourceUrl !== 'string') return null;
   let normalized = sourceUrl.trim();
