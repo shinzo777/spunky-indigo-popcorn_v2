@@ -290,8 +290,32 @@ export const getStyles = (t) =>
     cardBadgeItemText: { fontSize: 10.5, fontWeight: '600', color: t.textSub },
     cardNotes: { fontSize: 12, color: t.primary, lineHeight: 18 },
     cardNotesEmpty: { fontSize: 11.5, color: t.textMuted },
-    cardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+    cardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
     cardDate: { fontSize: 10.5, color: t.textMuted },
+
+    // ★ 各レシピカード上の「作った！」ボタン
+    cardCookedBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: t.primaryLight,
+      borderWidth: 1,
+      borderColor: t.primaryBorder,
+      paddingHorizontal: 11,
+      paddingVertical: 5,
+      borderRadius: 999,
+    },
+    cardCookedBtnDoneToday: {
+      backgroundColor: t.isDark ? '#193225' : '#ECFDF5',
+      borderColor: t.accentSage,
+    },
+    cardCookedBtnText: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: t.primary,
+    },
+    cardCookedBtnTextDoneToday: {
+      color: t.accentSage,
+    },
 
     fab: {
       position: 'absolute',
@@ -309,6 +333,249 @@ export const getStyles = (t) =>
       zIndex: 10,
     },
     fabText: { color: '#FFF', fontSize: 15, fontWeight: '700', letterSpacing: 0.5 },
+
+    // =============================================================
+    // ★ カレンダー画面（月別表示・直近1年分保管・日付クリック詳細・削除）
+    // =============================================================
+    calendarSummaryBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: t.isDark ? '#261F1A' : '#FFFDF9',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 18,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: t.primaryBorder,
+    },
+    calendarSummaryLeft: { flex: 1 },
+    calendarSummaryTitle: { fontSize: 13.5, fontWeight: '700', color: t.primary },
+    calendarSummarySub: { fontSize: 11.5, color: t.textMuted, marginTop: 2 },
+    calendarTodayJumpBtn: {
+      backgroundColor: t.primaryLight,
+      borderWidth: 1,
+      borderColor: t.primaryBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+    },
+    calendarTodayJumpBtnText: { fontSize: 11.5, fontWeight: '700', color: t.primary },
+
+    calendarMonthCard: {
+      backgroundColor: t.cardBg,
+      borderRadius: 24,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: t.border,
+      shadowColor: '#2C1810',
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.04,
+      shadowRadius: 14,
+      elevation: 2,
+    },
+    calendarMonthHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+      paddingHorizontal: 4,
+    },
+    calendarMonthNavBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 999,
+      backgroundColor: t.chipBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    calendarMonthNavBtnDisabled: {
+      opacity: 0.35,
+    },
+    calendarMonthNavBtnText: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: t.textMain,
+    },
+    calendarMonthTitleWrap: {
+      alignItems: 'center',
+    },
+    calendarMonthTitle: {
+      fontSize: 17.5,
+      fontWeight: '700',
+      color: t.textMain,
+      letterSpacing: 0.5,
+    },
+    calendarMonthCountSub: {
+      fontSize: 11.5,
+      color: t.textMuted,
+      marginTop: 2,
+    },
+    calendarWeekdayRow: {
+      flexDirection: 'row',
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+      paddingBottom: 8,
+      marginBottom: 6,
+    },
+    calendarWeekdayCell: {
+      flex: 1,
+      alignItems: 'center',
+    },
+    calendarWeekdayText: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: t.textMuted,
+    },
+    calendarWeekRow: {
+      flexDirection: 'row',
+      marginBottom: 4,
+    },
+    calendarDayCellEmpty: {
+      flex: 1,
+      height: 54,
+      margin: 2,
+    },
+    calendarDayCell: {
+      flex: 1,
+      height: 54,
+      margin: 2,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      paddingTop: 5,
+      borderWidth: 1,
+      borderColor: 'transparent',
+      backgroundColor: t.isDark ? '#1A1614' : '#FAF7F2',
+    },
+    calendarDayCellHasCooked: {
+      backgroundColor: t.primaryLight,
+      borderColor: t.primaryBorder,
+    },
+    calendarDayCellToday: {
+      borderColor: t.accentSage,
+      borderWidth: 1.5,
+    },
+    calendarDayCellSelected: {
+      backgroundColor: t.primary,
+      borderColor: t.primary,
+    },
+    calendarDayNumber: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: t.textMain,
+    },
+    calendarDayNumberSelected: {
+      color: '#FFFFFF',
+    },
+    calendarDayBadgeWrap: {
+      marginTop: 3,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 999,
+      backgroundColor: t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(200, 90, 23, 0.14)',
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    calendarDayBadgeWrapSelected: {
+      backgroundColor: 'rgba(255,255,255,0.25)',
+    },
+    calendarDayBadgeText: {
+      fontSize: 9.5,
+      fontWeight: '700',
+      color: t.primary,
+    },
+    calendarDayBadgeTextSelected: {
+      color: '#FFFFFF',
+    },
+
+    calendarDayDetailCard: {
+      backgroundColor: t.cardBg,
+      borderRadius: 24,
+      padding: 18,
+      marginBottom: 24,
+      borderWidth: 1,
+      borderColor: t.border,
+      shadowColor: '#2C1810',
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.04,
+      shadowRadius: 14,
+      elevation: 2,
+    },
+    calendarDayDetailHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingBottom: 10,
+      marginBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+    },
+    calendarDayDetailTitle: {
+      fontSize: 15.5,
+      fontWeight: '700',
+      color: t.textMain,
+    },
+    calendarDayDetailCountBadge: {
+      backgroundColor: t.primaryLight,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+    },
+    calendarDayDetailCountText: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: t.primary,
+    },
+    calendarCookedItemRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: t.border,
+    },
+    calendarCookedItemMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: 10,
+    },
+    calendarCookedItemIconBox: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      backgroundColor: t.chipBg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 10,
+    },
+    calendarCookedItemTitle: {
+      fontSize: 14.5,
+      fontWeight: '700',
+      color: t.textMain,
+    },
+    calendarCookedItemSub: {
+      fontSize: 11.5,
+      color: t.textMuted,
+      marginTop: 2,
+    },
+    calendarDeleteEntryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FDF2F2',
+      borderWidth: 1,
+      borderColor: '#FECACA',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+    },
+    calendarDeleteEntryBtnText: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: t.accentBordeaux,
+    },
 
     // 詳細画面
     detailImage: { width: '100%', height: 220, borderRadius: 22, marginBottom: 14 },
@@ -610,11 +877,12 @@ export const getStyles = (t) =>
     bigCookStartBtnText: { color: '#FFF', fontSize: 15.5, fontWeight: '700', letterSpacing: 0.5 },
     bigCookStartBtnActive: { backgroundColor: t.accentBordeaux, shadowColor: t.accentBordeaux },
 
-    smartActionBar: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+    smartActionBar: { flexDirection: 'row', gap: 8, marginBottom: 16 },
     smartActionBtn: {
       flex: 1,
       backgroundColor: t.cardBg,
       paddingVertical: 11,
+      paddingHorizontal: 6,
       borderRadius: 16,
       borderWidth: 1,
       borderColor: t.border,
@@ -626,8 +894,17 @@ export const getStyles = (t) =>
       shadowRadius: 6,
       elevation: 1,
     },
+    smartActionBtnCooked: {
+      backgroundColor: t.primaryLight,
+      borderColor: t.primaryBorder,
+    },
+    smartActionBtnCookedDone: {
+      backgroundColor: t.accentSage,
+      borderColor: t.accentSage,
+    },
     smartActionBtnActiveRequest: { backgroundColor: '#D97724', borderColor: '#D97724' },
-    smartActionBtnText: { fontSize: 12.5, fontWeight: '700', color: t.textMain },
+    smartActionBtnText: { fontSize: 12, fontWeight: '700', color: t.textMain },
+    smartActionBtnTextCooked: { fontSize: 12, fontWeight: '700', color: t.primary },
     smartActionBtnTextActive: { color: '#FFF' },
 
     noteSection: {

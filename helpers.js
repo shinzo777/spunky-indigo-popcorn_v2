@@ -1,10 +1,99 @@
 import { Platform } from 'react-native';
-import { STAPLE_SEASONINGS_REGEX } from './constants';
+import { STAPLE_SEASONINGS_REGEX, CALENDAR_RETENTION_DAYS, WEEKDAY_LABELS } from './constants';
 
 const CIRCLED_NUMBERS = [
   '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
   '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳',
 ];
+
+// =============================================================
+// カレンダー・調理履歴用ヘルパー関数群（直近1年分保管・月別表示対応）
+// =============================================================
+
+/**
+ * DateオブジェクトまたはISO文字列をローカルタイムゾーンの 'YYYY-MM-DD' 形式に変換
+ */
+export const toDateKey = (dateInput = new Date()) => {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+/**
+ * 'YYYY-MM-DD' を「M月D日(曜)」の日本語表記に変換
+ */
+export const formatDateKeyJapanese = (dateKey) => {
+  if (!dateKey || typeof dateKey !== 'string') return '';
+  const parts = dateKey.split('-').map((n) => parseInt(n, 10));
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return dateKey;
+  const [y, m, d] = parts;
+  const dateObj = new Date(y, m - 1, d);
+  const w = WEEKDAY_LABELS[dateObj.getDay()] || '';
+  return `${m}月${d}日(${w})`;
+};
+
+/**
+ * 直近1年分（366日）より古い調理履歴を自動除外して返す
+ */
+export const pruneCookingHistoryOneYear = (historyList = []) => {
+  if (!Array.isArray(historyList)) return [];
+  const now = new Date();
+  const cutoff = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - CALENDAR_RETENTION_DAYS
+  );
+  const cutoffKey = toDateKey(cutoff);
+
+  return historyList
+    .filter((entry) => entry && entry.dateKey && entry.dateKey >= cutoffKey)
+    .sort((a, b) => {
+      if (a.dateKey !== b.dateKey) return b.dateKey.localeCompare(a.dateKey);
+      return (b.cookedAt || '').localeCompare(a.cookedAt || '');
+    });
+};
+
+/**
+ * 指定された年・月（monthIndex: 0〜11）の月間カレンダーグリッド（週ごとの配列）を生成
+ */
+export const generateCalendarMonthWeeks = (year, monthIndex) => {
+  const firstDay = new Date(year, monthIndex, 1);
+  const lastDay = new Date(year, monthIndex + 1, 0);
+  const startDow = firstDay.getDay(); // 0 (Sun) - 6 (Sat)
+  const totalDays = lastDay.getDate();
+
+  const cells = [];
+  for (let i = 0; i < startDow; i++) {
+    cells.push(null);
+  }
+  for (let day = 1; day <= totalDays; day++) {
+    const mStr = String(monthIndex + 1).padStart(2, '0');
+    const dStr = String(day).padStart(2, '0');
+    cells.push({
+      day,
+      dateKey: `${year}-${mStr}-${dStr}`,
+      dayOfWeek: (startDow + day - 1) % 7,
+    });
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+  return weeks;
+};
 
 // =============================================================
 // 要件1：URLのドメインから sourcePlatform を自動判定

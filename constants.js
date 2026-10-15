@@ -5,6 +5,10 @@ export const FIREBASE_PROJECT_ID = 'spunky-indigo-popcorn';
 export const AI_PROXY_API_URL = 'https://white-fog-f0b1.wagaya-no-recipe-api.workers.dev/';
 export const APP_SECRET_TOKEN = 'wagaya-recipe-2026-secret-token';
 
+// カレンダー履歴の保管期間（直近1年分 = 366日）
+export const CALENDAR_RETENTION_DAYS = 366;
+export const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
 // -------------------------------------------------------------
 // 要件1：出典プラットフォーム定義
 // -------------------------------------------------------------
@@ -194,9 +198,11 @@ export const SHOPPING_AISLES = [
 
 export const STAPLE_SEASONINGS_REGEX = /醤油|しょうゆ|みりん|料理酒|酒|砂糖|さとう|塩|しお|胡椒|こしょう|コショウ|サラダ油|ごま油|オリーブオイル|油|米油|味噌|みそ|酢|す|だしの素|ほんだし|コンソメ|鶏がらスープ|片栗粉|小麦粉/;
 
+// ★ ボトムナビゲーションバーに「カレンダー」を追加
 export const NAV_ITEMS = [
   { key: 'home', iconName: 'home-outline', activeIconName: 'home', label: 'ホーム' },
   { key: 'recipes', iconName: 'book-outline', activeIconName: 'book', label: 'レシピ帳' },
+  { key: 'calendar', iconName: 'calendar-outline', activeIconName: 'calendar', label: 'カレンダー' },
   { key: 'shopping', iconName: 'cart-outline', activeIconName: 'cart', label: '買い物' },
   { key: 'settings', iconName: 'settings-outline', activeIconName: 'settings', label: '設定' },
 ];

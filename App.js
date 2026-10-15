@@ -37,6 +37,7 @@ import {
   NAV_ITEMS,
   SOURCE_PLATFORMS,
   RECIPE_EXTRACTION_SYSTEM_PROMPT,
+  WEEKDAY_LABELS,
   getSeasonIcon,
 } from './constants';
 
@@ -52,6 +53,10 @@ import {
   inferCreatorNameFromUrl,
   normalizeRecipeRecord,
   parseAiExtractionResponse,
+  toDateKey,
+  formatDateKeyJapanese,
+  pruneCookingHistoryOneYear,
+  generateCalendarMonthWeeks,
 } from './helpers';
 
 import {
@@ -160,9 +165,18 @@ const NavTabButton = ({ tab, currentTab, onPress, styles, unboughtCount, theme }
 };
 
 export default function App() {
+  const now = new Date();
+  const todayDateKey = toDateKey(now);
+
   const [cloudRecipes, setCloudRecipes] = useState([]);
   const [currentTab, setCurrentTab] = useState('home');
   const [activeSubView, setActiveSubView] = useState(null); // null | 'detail' | 'edit'
+
+  // ★ カレンダー＆調理履歴ステート（直近1年分保管）
+  const [cookingHistory, setCookingHistory] = useState([]);
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth()); // 0〜11
+  const [selectedCalendarDateKey, setSelectedCalendarDateKey] = useState(todayDateKey);
 
   // ★ シームレスなタブ遷移アニメーション
   const tabFadeAnim = useRef(new Animated.Value(1)).current;
@@ -234,11 +248,10 @@ export default function App() {
   const theme = isDarkMode ? THEMES.dark : THEMES.light;
   const styles = useMemo(() => getStyles(theme), [theme]);
 
-  const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentSeasonIcon = getSeasonIcon(currentMonth);
   const currentSeasonalText = MONTHLY_SEASONAL_MAP[currentMonth] || '';
-  const todayDayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][now.getDay()];
+  const todayDayOfWeek = WEEKDAY_LABELS[now.getDay()];
   const todayDateString = `${currentMonth}月${now.getDate()}日(${todayDayOfWeek})`;
 
   const firestoreFamilyApiUrl = useMemo(() => {
@@ -249,6 +262,11 @@ export default function App() {
   const firestoreShoppingApiUrl = useMemo(() => {
     if (!FIREBASE_PROJECT_ID || !familyId) return null;
     return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/shopping/list`;
+  }, [familyId]);
+
+  const firestoreCalendarApiUrl = useMemo(() => {
+    if (!FIREBASE_PROJECT_ID || !familyId) return null;
+    return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/families/${familyId}/shopping/calendar_history`;
   }, [familyId]);
 
   const allRecipes = useMemo(() => {
@@ -355,6 +373,20 @@ export default function App() {
       }
     });
 
+    AsyncStorage.getItem('@cooking_history').then((val) => {
+      if (val !== null) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            const pruned = pruneCookingHistoryOneYear(parsed);
+            setCookingHistory(pruned);
+          }
+        } catch (e) {
+          console.log(e);
+        }
+      }
+    });
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -362,13 +394,15 @@ export default function App() {
     if (!firestoreFamilyApiUrl) return;
     fetchRecipesFromCloud();
     fetchShoppingListFromCloud();
+    fetchCookingHistoryFromCloud();
     const interval = setInterval(() => {
       fetchRecipesFromCloud();
       fetchShoppingListFromCloud();
+      fetchCookingHistoryFromCloud();
     }, 12000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firestoreFamilyApiUrl, firestoreShoppingApiUrl]);
+  }, [firestoreFamilyApiUrl, firestoreShoppingApiUrl, firestoreCalendarApiUrl]);
 
   const updateSetting = async (key, value, setter) => {
     setter(value);
@@ -376,6 +410,48 @@ export default function App() {
       await AsyncStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // =============================================================
+  // カレンダー調理履歴のクラウド同期 ＆ 保存（直近1年分保管）
+  // =============================================================
+  const fetchCookingHistoryFromCloud = async () => {
+    if (!firestoreCalendarApiUrl) return;
+    try {
+      const res = await fetch(firestoreCalendarApiUrl);
+      if (!res.ok) return;
+      const json = await res.json();
+      const rawJson = json.fields?.data?.stringValue;
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed)) {
+          const pruned = pruneCookingHistoryOneYear(parsed);
+          setCookingHistory(pruned);
+          AsyncStorage.setItem('@cooking_history', JSON.stringify(pruned));
+        }
+      }
+    } catch (e) {
+      console.log('Calendar sync error:', e.message);
+    }
+  };
+
+  const saveCookingHistory = async (newHistory) => {
+    const pruned = pruneCookingHistoryOneYear(newHistory);
+    setCookingHistory(pruned);
+    try {
+      await AsyncStorage.setItem('@cooking_history', JSON.stringify(pruned));
+      if (firestoreCalendarApiUrl) {
+        await fetch(`${firestoreCalendarApiUrl}?updateMask.fieldPaths=data`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: { data: { stringValue: JSON.stringify(pruned) } },
+          }),
+        });
+      }
+    } catch (e) {
+      console.error('Save cooking history error:', e);
     }
   };
 
@@ -486,37 +562,137 @@ export default function App() {
   }, [shoppingList]);
 
   // =============================================================
-  // 要件4：調理完了時の履歴記録 ＆「作レポ・応援（エンゲージメント還元）」モーダル表示
+  // ★ 「作った！」ボタン ＆ カレンダー履歴記録 ＆ 応援モーダル表示
   // =============================================================
-  const handleMarkAsCookedToday = async (recipe) => {
-    if (!firestoreFamilyApiUrl) return;
+  const handleMarkAsCookedToday = async (recipe, customDateKey = null) => {
     const normalized = normalizeRecipeRecord(recipe);
-    const todayStr = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const targetDateKey = customDateKey || toDateKey(new Date());
+
+    // 同じ日に同じレシピが既に登録されているかチェック（重複防止しつつ時刻を更新）
+    const existingSameDay = cookingHistory.find(
+      (entry) => entry.dateKey === targetDateKey && entry.recipeId === normalized.id
+    );
+
+    let nextHistory;
+    if (existingSameDay) {
+      nextHistory = cookingHistory.map((entry) =>
+        entry.id === existingSameDay.id
+          ? {
+              ...entry,
+              cookedAt: nowIso,
+              title: normalized.title,
+              category: normalized.category || '主菜',
+            }
+          : entry
+      );
+    } else {
+      const newEntry = {
+        id: `cook_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        dateKey: targetDateKey,
+        cookedAt: nowIso,
+        recipeId: normalized.id,
+        title: normalized.title,
+        category: normalized.category || '主菜',
+      };
+      nextHistory = [newEntry, ...cookingHistory];
+    }
+
+    await saveCookingHistory(nextHistory);
+
     const updated = {
       ...normalized,
-      lastCookedAt: todayStr,
+      lastCookedAt: nowIso,
       isCooked: true,
       isRequested: false,
     };
 
-    setSelectedRecipe(updated);
+    if (selectedRecipe && selectedRecipe.id === normalized.id) {
+      setSelectedRecipe(updated);
+    }
     setCompletedRecipe(updated);
+    setSelectedCalendarDateKey(targetDateKey);
     setIsCookingCompleteModalVisible(true);
-    setCloudRecipes((prev) =>
-      prev.map((r) => (r.id === recipe.id ? updated : r))
-    );
 
-    try {
-      const updateUrl = `${firestoreFamilyApiUrl}/${recipe.id}?updateMask.fieldPaths=data`;
-      await fetch(updateUrl, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fields: { data: { stringValue: JSON.stringify(updated) } },
-        }),
-      });
-    } catch (e) {
-      console.log(e);
+    setCloudRecipes((prev) => {
+      const exists = prev.some((r) => r.id === normalized.id);
+      if (exists) {
+        return prev.map((r) => (r.id === normalized.id ? updated : r));
+      }
+      return [...prev, updated];
+    });
+
+    if (firestoreFamilyApiUrl) {
+      try {
+        const updateUrl = `${firestoreFamilyApiUrl}/${normalized.id}?updateMask.fieldPaths=data`;
+        await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: { data: { stringValue: JSON.stringify(updated) } },
+          }),
+        });
+      } catch (e) {
+        console.log(e);
+      }
+    }
+  };
+
+  // =============================================================
+  // ★ カレンダーから作ったメニューを消す（間違えて登録した場合の削除）
+  // =============================================================
+  const handleDeleteCalendarEntry = (entry) => {
+    if (!entry) return;
+    const confirmMsg = `「${formatDateKeyJapanese(entry.dateKey)}」の「${entry.title}」の調理記録を取り消しますか？`;
+
+    const executeRemove = async () => {
+      const remainingHistory = cookingHistory.filter((item) => item.id !== entry.id);
+      await saveCookingHistory(remainingHistory);
+
+      // 同じレシピの残りの調理履歴から最新の調理日を再計算し、レシピ側の lastCookedAt も整合させる
+      const targetRecipe = allRecipes.find((r) => r.id === entry.recipeId);
+      if (targetRecipe) {
+        const recipeEntries = remainingHistory.filter((item) => item.recipeId === entry.recipeId);
+        const latestEntry = recipeEntries.length > 0 ? recipeEntries[0] : null;
+        const updatedRecipe = {
+          ...targetRecipe,
+          lastCookedAt: latestEntry ? latestEntry.cookedAt || `${latestEntry.dateKey}T12:00:00.000Z` : null,
+          isCooked: recipeEntries.length > 0 ? true : !!targetRecipe.isDefault,
+        };
+
+        if (selectedRecipe && selectedRecipe.id === targetRecipe.id) {
+          setSelectedRecipe(updatedRecipe);
+        }
+        setCloudRecipes((prev) =>
+          prev.map((r) => (r.id === targetRecipe.id ? updatedRecipe : r))
+        );
+
+        if (firestoreFamilyApiUrl) {
+          try {
+            const updateUrl = `${firestoreFamilyApiUrl}/${targetRecipe.id}?updateMask.fieldPaths=data`;
+            await fetch(updateUrl, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: { data: { stringValue: JSON.stringify(updatedRecipe) } },
+              }),
+            });
+          } catch (e) {
+            console.log(e);
+          }
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) {
+        executeRemove();
+      }
+    } else {
+      Alert.alert('調理記録の取り消し', confirmMsg, [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '記録を消す', style: 'destructive', onPress: executeRemove },
+      ]);
     }
   };
 
@@ -536,9 +712,13 @@ export default function App() {
     if (selectedRecipe && selectedRecipe.id === updated.id) {
       setSelectedRecipe(updated);
     }
-    setCloudRecipes((prev) =>
-      prev.map((r) => (r.id === updated.id ? updated : r))
-    );
+    setCloudRecipes((prev) => {
+      const exists = prev.some((r) => r.id === updated.id);
+      if (exists) {
+        return prev.map((r) => (r.id === updated.id ? updated : r));
+      }
+      return [...prev, updated];
+    });
 
     try {
       const updateUrl = `${firestoreFamilyApiUrl}/${updated.id}?updateMask.fieldPaths=data`;
@@ -697,6 +877,7 @@ export default function App() {
     setIsRefreshing(true);
     await fetchRecipesFromCloud();
     await fetchShoppingListFromCloud();
+    await fetchCookingHistoryFromCloud();
     setIsRefreshing(false);
   };
 
@@ -706,9 +887,13 @@ export default function App() {
     const updatedRecipe = normalizeRecipeRecord({ ...recipe, isRequested: nextRequested });
 
     setSelectedRecipe(updatedRecipe);
-    setCloudRecipes((prev) =>
-      prev.map((r) => (r.id === recipe.id ? updatedRecipe : r))
-    );
+    setCloudRecipes((prev) => {
+      const exists = prev.some((r) => r.id === recipe.id);
+      if (exists) {
+        return prev.map((r) => (r.id === recipe.id ? updatedRecipe : r));
+      }
+      return [...prev, updatedRecipe];
+    });
 
     try {
       const updateUrl = `${firestoreFamilyApiUrl}/${recipe.id}?updateMask.fieldPaths=data`;
@@ -737,6 +922,108 @@ export default function App() {
 
   const toggleLineCheck = (index) => {
     setCheckedLines((prev) => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  // =============================================================
+  // カレンダー用の集計データ（既存レシピの lastCookedAt も自動補完しつつ直近1年分を保持）
+  // =============================================================
+  const mergedCookingHistory = useMemo(() => {
+    const combined = [...cookingHistory];
+    const existingKeys = new Set(combined.map((e) => `${e.dateKey}_${e.recipeId}`));
+
+    allRecipes.forEach((r) => {
+      if (r.lastCookedAt) {
+        const dKey = toDateKey(r.lastCookedAt);
+        const key = `${dKey}_${r.id}`;
+        if (!existingKeys.has(key)) {
+          combined.push({
+            id: `legacy_${r.id}_${dKey}`,
+            dateKey: dKey,
+            cookedAt: r.lastCookedAt,
+            recipeId: r.id,
+            title: r.title,
+            category: r.category || '主菜',
+          });
+          existingKeys.add(key);
+        }
+      }
+    });
+
+    return pruneCookingHistoryOneYear(combined);
+  }, [cookingHistory, allRecipes]);
+
+  // 日付（YYYY-MM-DD）ごとの調理記録マップ
+  const historyByDateMap = useMemo(() => {
+    const map = {};
+    mergedCookingHistory.forEach((entry) => {
+      if (!map[entry.dateKey]) {
+        map[entry.dateKey] = [];
+      }
+      map[entry.dateKey].push(entry);
+    });
+    return map;
+  }, [mergedCookingHistory]);
+
+  // 今日すでに「作った！」登録済みのレシピIDセット
+  const cookedTodayRecipeIdSet = useMemo(() => {
+    const todayEntries = historyByDateMap[todayDateKey] || [];
+    return new Set(todayEntries.map((e) => e.recipeId));
+  }, [historyByDateMap, todayDateKey]);
+
+  // カレンダーで現在表示中の年・月の週配列
+  const calendarWeeks = useMemo(() => {
+    return generateCalendarMonthWeeks(calendarYear, calendarMonth);
+  }, [calendarYear, calendarMonth]);
+
+  // 表示中の月の調理統計（調理日数・合計品数）
+  const currentMonthStats = useMemo(() => {
+    const monthPrefix = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-`;
+    const monthEntries = mergedCookingHistory.filter((e) => e.dateKey.startsWith(monthPrefix));
+    const uniqueDays = new Set(monthEntries.map((e) => e.dateKey));
+    return {
+      totalDishes: monthEntries.length,
+      cookedDays: uniqueDays.size,
+    };
+  }, [mergedCookingHistory, calendarYear, calendarMonth]);
+
+  // 選択中の日付の調理メニュー一覧
+  const selectedDateEntries = useMemo(() => {
+    return historyByDateMap[selectedCalendarDateKey] || [];
+  }, [historyByDateMap, selectedCalendarDateKey]);
+
+  // カレンダーの月移動（直近1年＝12ヶ月前〜今月まで移動可能）
+  const canGoPrevMonth = useMemo(() => {
+    const minDate = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+    const target = new Date(calendarYear, calendarMonth - 1, 1);
+    return target >= minDate;
+  }, [calendarYear, calendarMonth, now]);
+
+  const canGoNextMonth = useMemo(() => {
+    const maxDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const target = new Date(calendarYear, calendarMonth + 1, 1);
+    return target <= maxDate;
+  }, [calendarYear, calendarMonth, now]);
+
+  const handleChangeCalendarMonth = (delta) => {
+    const nextDate = new Date(calendarYear, calendarMonth + delta, 1);
+    const nextY = nextDate.getFullYear();
+    const nextM = nextDate.getMonth();
+    setCalendarYear(nextY);
+    setCalendarMonth(nextM);
+
+    // 今月を表示した場合は今日を選択、それ以外の月は1日を選択
+    if (nextY === now.getFullYear() && nextM === now.getMonth()) {
+      setSelectedCalendarDateKey(todayDateKey);
+    } else {
+      const mStr = String(nextM + 1).padStart(2, '0');
+      setSelectedCalendarDateKey(`${nextY}-${mStr}-01`);
+    }
+  };
+
+  const handleJumpToCurrentMonth = () => {
+    setCalendarYear(now.getFullYear());
+    setCalendarMonth(now.getMonth());
+    setSelectedCalendarDateKey(todayDateKey);
   };
 
   const requestedCount = useMemo(() => {
@@ -905,7 +1192,12 @@ export default function App() {
       return;
     }
 
-    const dataStr = JSON.stringify(allRecipes, null, 2);
+    const backupPayload = {
+      exportedAt: new Date().toISOString(),
+      recipes: allRecipes,
+      cookingHistory: mergedCookingHistory,
+    };
+    const dataStr = JSON.stringify(backupPayload, null, 2);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const filename = `meppy_recipes_${dateStr}.json`;
 
@@ -917,7 +1209,7 @@ export default function App() {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(url);
-      window.alert(`全${allRecipes.length}品のレシピデータをファイルに書き出しました！\n（ダウンロードフォルダをご確認ください）`);
+      window.alert(`全${allRecipes.length}品のレシピとカレンダー履歴をファイルに書き出しました！\n（ダウンロードフォルダをご確認ください）`);
     } else {
       Share.share({
         title: filename,
@@ -1102,6 +1394,7 @@ export default function App() {
       ogpTitle: ogpTitle && ogpTitle.trim() ? ogpTitle.trim() : null,
       isScrapedAllowed: !!isScrapedAllowed,
       updatedAt: new Date().toLocaleDateString('ja-JP'),
+      lastCookedAt: editingRecipeId ? selectedRecipe?.lastCookedAt || null : null,
       isRequested: editingRecipeId ? (selectedRecipe?.isRequested || false) : false,
       isDefault: isEditingDefault,
       isCooked: finalCookedState,
@@ -1277,13 +1570,14 @@ export default function App() {
   }
 
   // =============================================================
-  // サブ画面：詳細画面（RecipeDetailScreen - 要件3対応）
+  // サブ画面：詳細画面（RecipeDetailScreen - 要件3 ＆「作った！」ボタン対応）
   // =============================================================
   if (activeSubView === 'detail' && selectedRecipe) {
     const normalizedRecipe = normalizeRecipeRecord(selectedRecipe);
     // 要件2-4：画像はユーザー自身が調理後に撮影した完成写真（foodImageUri）のみ表示
     const mainImage = normalizedRecipe.foodImageUri;
     const categoryIcon = getCategoryIcon(normalizedRecipe.category);
+    const isCookedToday = cookedTodayRecipeIdSet.has(normalizedRecipe.id);
 
     const rawLines = (normalizedRecipe.extractedText || '')
       .split('\n')
@@ -1416,6 +1710,24 @@ export default function App() {
             ) : null}
 
             <View style={styles.smartActionBar}>
+              {/* ★ 詳細画面の「作った！」ボタン（ワンタップでカレンダーに記録） */}
+              <SpringCard
+                style={[
+                  styles.smartActionBtn,
+                  isCookedToday ? styles.smartActionBtnCookedDone : styles.smartActionBtnCooked,
+                ]}
+                onPress={() => handleMarkAsCookedToday(normalizedRecipe)}
+              >
+                <Text
+                  style={[
+                    styles.smartActionBtnTextCooked,
+                    isCookedToday && styles.smartActionBtnTextActive,
+                  ]}
+                >
+                  {isCookedToday ? '✅ 今日作った！' : '🍳 作った！'}
+                </Text>
+              </SpringCard>
+
               <SpringCard
                 style={styles.smartActionBtn}
                 onPress={() => handleAddRecipeToShoppingList(normalizedRecipe)}
@@ -1984,6 +2296,9 @@ export default function App() {
               {/* ③ 直近の献立（被り防止） */}
               <View style={styles.homeSectionHeader}>
                 <Text style={styles.homeSectionTitle}>🕒 直近の献立（被り防止）</Text>
+                <TouchableOpacity onPress={() => switchTabSmoothly('calendar')}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: theme.primary }}>📅 カレンダーを見る ›</Text>
+                </TouchableOpacity>
               </View>
               {isCookedButtonEnabled && recentCookedRecipes.length > 0 ? (
                 <View style={styles.recentMealCard}>
@@ -2010,7 +2325,7 @@ export default function App() {
                 <View style={styles.homeEmptyCard}>
                   <Text style={styles.homeEmptyCardTitle}>🕒 調理履歴はまだありません</Text>
                   <Text style={styles.homeEmptyCardSub}>
-                    料理を作った後に「調理終了」を押すと、ここに履歴が自動記録され、毎日の献立の被り防止に役立ちます。
+                    各レシピの「🍳 作った！」ボタンを押すと、カレンダーとここに履歴が自動記録され、献立の被り防止に役立ちます。
                   </Text>
                 </View>
               )}
@@ -2101,7 +2416,7 @@ export default function App() {
         )}
 
         {/* -----------------------------------------------------------
-            タブ2：📖 レシピ帳画面
+            タブ2：📖 レシピ帳画面（各レシピに「作った！」ボタンを配置）
         ----------------------------------------------------------- */}
         {currentTab === 'recipes' && (
           <View style={{ flex: 1 }}>
@@ -2201,6 +2516,7 @@ export default function App() {
                 const displayImage = item.foodImageUri;
                 const categoryIcon = getCategoryIcon(item.category);
                 const platformMeta = SOURCE_PLATFORMS[item.sourcePlatform] || SOURCE_PLATFORMS.manual;
+                const isCookedToday = cookedTodayRecipeIdSet.has(item.id);
 
                 return (
                   <SpringCard
@@ -2262,8 +2578,36 @@ export default function App() {
 
                       <View style={styles.cardMetaRow}>
                         <Text style={styles.cardDate}>
-                          {item.isDefault ? '📖 基本レシピ' : item.updatedAt ? `更新: ${item.updatedAt}` : `登録: ${item.createdAt}`}
+                          {item.lastCookedAt
+                            ? `前回: ${formatRelativeDate(item.lastCookedAt)}`
+                            : item.isDefault
+                            ? '📖 基本レシピ'
+                            : item.updatedAt
+                            ? `更新: ${item.updatedAt}`
+                            : `登録: ${item.createdAt}`}
                         </Text>
+
+                        {/* ★ 各レシピカードの「作った！」ボタン */}
+                        <TouchableOpacity
+                          style={[
+                            styles.cardCookedBtn,
+                            isCookedToday && styles.cardCookedBtnDoneToday,
+                          ]}
+                          activeOpacity={0.75}
+                          onPress={(e) => {
+                            if (e && e.stopPropagation) e.stopPropagation();
+                            handleMarkAsCookedToday(item);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.cardCookedBtnText,
+                              isCookedToday && styles.cardCookedBtnTextDoneToday,
+                            ]}
+                          >
+                            {isCookedToday ? '✅ 今日作った！' : '🍳 作った！'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   </SpringCard>
@@ -2282,7 +2626,226 @@ export default function App() {
         )}
 
         {/* -----------------------------------------------------------
-            タブ3：🛒 買い物リスト画面
+            タブ3：📅 カレンダー画面（月別表示・直近1年分保管・日付クリック詳細・記録削除）
+        ----------------------------------------------------------- */}
+        {currentTab === 'calendar' && (
+          <View style={{ flex: 1 }}>
+            <View style={styles.header}>
+              <View style={styles.headerSideArea} />
+              <Text style={styles.headerTitle}>📅 献立カレンダー</Text>
+              <View style={[styles.headerSideArea, { alignItems: 'flex-end' }]}>
+                <TouchableOpacity
+                  style={styles.calendarTodayJumpBtn}
+                  onPress={handleJumpToCurrentMonth}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.calendarTodayJumpBtnText}>今日</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
+              {/* カレンダーサマリー案内バー */}
+              <View style={styles.calendarSummaryBanner}>
+                <View style={styles.calendarSummaryLeft}>
+                  <Text style={styles.calendarSummaryTitle}>
+                    🍳 {calendarYear}年{calendarMonth + 1}月の調理記録: {currentMonthStats.cookedDays}日（計{currentMonthStats.totalDishes}品）
+                  </Text>
+                  <Text style={styles.calendarSummarySub}>
+                    日付をタップするとその日作ったメニューを表示・取り消しできます（直近1年分を自動保管）
+                  </Text>
+                </View>
+              </View>
+
+              {/* 月間カレンダーカード */}
+              <View style={styles.calendarMonthCard}>
+                <View style={styles.calendarMonthHeaderRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.calendarMonthNavBtn,
+                      !canGoPrevMonth && styles.calendarMonthNavBtnDisabled,
+                    ]}
+                    onPress={() => canGoPrevMonth && handleChangeCalendarMonth(-1)}
+                    disabled={!canGoPrevMonth}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.calendarMonthNavBtnText}>‹</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.calendarMonthTitleWrap}>
+                    <Text style={styles.calendarMonthTitle}>
+                      {calendarYear}年 {calendarMonth + 1}月
+                    </Text>
+                    <Text style={styles.calendarMonthCountSub}>
+                      年間累計: {mergedCookingHistory.length}品記録中
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.calendarMonthNavBtn,
+                      !canGoNextMonth && styles.calendarMonthNavBtnDisabled,
+                    ]}
+                    onPress={() => canGoNextMonth && handleChangeCalendarMonth(1)}
+                    disabled={!canGoNextMonth}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.calendarMonthNavBtnText}>›</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 曜日ヘッダー */}
+                <View style={styles.calendarWeekdayRow}>
+                  {WEEKDAY_LABELS.map((w, idx) => (
+                    <View key={w} style={styles.calendarWeekdayCell}>
+                      <Text
+                        style={[
+                          styles.calendarWeekdayText,
+                          idx === 0 && { color: theme.accentBordeaux },
+                          idx === 6 && { color: '#3A7CA5' },
+                        ]}
+                      >
+                        {w}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* 週ごとの日付セル */}
+                {calendarWeeks.map((week, wIdx) => (
+                  <View key={`week_${wIdx}`} style={styles.calendarWeekRow}>
+                    {week.map((cell, cIdx) => {
+                      if (!cell) {
+                        return <View key={`empty_${wIdx}_${cIdx}`} style={styles.calendarDayCellEmpty} />;
+                      }
+
+                      const dayEntries = historyByDateMap[cell.dateKey] || [];
+                      const hasCooked = dayEntries.length > 0;
+                      const isSelected = selectedCalendarDateKey === cell.dateKey;
+                      const isToday = cell.dateKey === todayDateKey;
+                      const firstIcon = hasCooked ? getCategoryIcon(dayEntries[0].category) : '';
+
+                      return (
+                        <TouchableOpacity
+                          key={cell.dateKey}
+                          style={[
+                            styles.calendarDayCell,
+                            hasCooked && styles.calendarDayCellHasCooked,
+                            isToday && styles.calendarDayCellToday,
+                            isSelected && styles.calendarDayCellSelected,
+                          ]}
+                          activeOpacity={0.75}
+                          onPress={() => setSelectedCalendarDateKey(cell.dateKey)}
+                        >
+                          <Text
+                            style={[
+                              styles.calendarDayNumber,
+                              cell.dayOfWeek === 0 && !isSelected && { color: theme.accentBordeaux },
+                              cell.dayOfWeek === 6 && !isSelected && { color: '#3A7CA5' },
+                              isSelected && styles.calendarDayNumberSelected,
+                            ]}
+                          >
+                            {cell.day}
+                          </Text>
+
+                          {hasCooked ? (
+                            <View
+                              style={[
+                                styles.calendarDayBadgeWrap,
+                                isSelected && styles.calendarDayBadgeWrapSelected,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.calendarDayBadgeText,
+                                  isSelected && styles.calendarDayBadgeTextSelected,
+                                ]}
+                              >
+                                {firstIcon}{dayEntries.length > 1 ? `×${dayEntries.length}` : ''}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+
+              {/* 選択した日の作ったメニュー一覧 ＆ 削除（取り消し）カード */}
+              <View style={styles.calendarDayDetailCard}>
+                <View style={styles.calendarDayDetailHeader}>
+                  <Text style={styles.calendarDayDetailTitle}>
+                    🍽️ {formatDateKeyJapanese(selectedCalendarDateKey)} に作ったメニュー
+                  </Text>
+                  <View style={styles.calendarDayDetailCountBadge}>
+                    <Text style={styles.calendarDayDetailCountText}>
+                      {selectedDateEntries.length}品
+                    </Text>
+                  </View>
+                </View>
+
+                {selectedDateEntries.length === 0 ? (
+                  <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 13.5, fontWeight: '600', color: theme.textSub, marginBottom: 4 }}>
+                      この日に記録された料理はありません
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.textMuted, textAlign: 'center', lineHeight: 18 }}>
+                      レシピ帳の各レシピにある「🍳 作った！」ボタンを押すと、その日のカレンダーに記録されます。
+                    </Text>
+                  </View>
+                ) : (
+                  selectedDateEntries.map((entry) => {
+                    const matchedRecipe = allRecipes.find((r) => r.id === entry.recipeId);
+                    const catIcon = getCategoryIcon(matchedRecipe?.category || entry.category);
+
+                    return (
+                      <View key={entry.id} style={styles.calendarCookedItemRow}>
+                        <TouchableOpacity
+                          style={styles.calendarCookedItemMain}
+                          activeOpacity={0.75}
+                          onPress={() => {
+                            if (matchedRecipe) {
+                              setSelectedRecipe(matchedRecipe);
+                              setIsCookingMode(false);
+                              setCheckedLines({});
+                              openSubViewSmoothly('detail');
+                            }
+                          }}
+                        >
+                          <View style={styles.calendarCookedItemIconBox}>
+                            <Text style={{ fontSize: 18 }}>{catIcon}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.calendarCookedItemTitle} numberOfLines={1}>
+                              {matchedRecipe?.title || entry.title}
+                            </Text>
+                            <Text style={styles.calendarCookedItemSub}>
+                              {matchedRecipe?.category || entry.category || '主菜'}
+                              {matchedRecipe ? ' · タップでレシピ詳細へ ›' : ''}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        {/* ★ カレンダーから作ったメニューを消すボタン（誤登録の取り消し） */}
+                        <TouchableOpacity
+                          style={styles.calendarDeleteEntryBtn}
+                          activeOpacity={0.75}
+                          onPress={() => handleDeleteCalendarEntry(entry)}
+                        >
+                          <Text style={styles.calendarDeleteEntryBtnText}>🗑️ 消す</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* -----------------------------------------------------------
+            タブ4：🛒 買い物リスト画面
         ----------------------------------------------------------- */}
         {currentTab === 'shopping' && (
           <View style={{ flex: 1 }}>
@@ -2373,7 +2936,7 @@ export default function App() {
         )}
 
         {/* -----------------------------------------------------------
-            タブ4：⚙️ 設定画面
+            タブ5：⚙️ 設定画面
         ----------------------------------------------------------- */}
         {currentTab === 'settings' && (
           <View style={{ flex: 1 }}>
@@ -2389,7 +2952,7 @@ export default function App() {
                   🏠 家族グループ（データの共有・個別化）
                 </Text>
                 <Text style={styles.subLabelHelp}>
-                  同じ家族IDを使うスマホ同士でのみレシピが同期されます。高セキュリティな1兆通り以上のIDで他世帯と完全に分離されます。
+                  同じ家族IDを使うスマホ同士でのみレシピとカレンダーが同期されます。高セキュリティな1兆通り以上のIDで他世帯と完全に分離されます。
                 </Text>
 
                 <Text style={styles.fieldLabel}>あなたの家族ID</Text>
@@ -2398,7 +2961,7 @@ export default function App() {
                   <TouchableOpacity
                     style={styles.familyIdInfoBtn}
                     onPress={() => {
-                      const msg = `あなたの家族ID: ${familyId}\n\nこのIDをパートナーや家族のスマホの「別の家族グループに参加」欄に入力すると、同じレシピ帳をリアルタイム共有できます。`;
+                      const msg = `あなたの家族ID: ${familyId}\n\nこのIDをパートナーや家族のスマホの「別の家族グループに参加」欄に入力すると、同じレシピ帳・献立カレンダーをリアルタイム共有できます。`;
                       Platform.OS === 'web' ? window.alert(msg) : Alert.alert('家族グループID', msg);
                     }}
                   >
@@ -2436,7 +2999,7 @@ export default function App() {
                   💾 レシピデータのバックアップ（エクスポート）
                 </Text>
                 <Text style={styles.subLabelHelp}>
-                  わが家で記録した大切なレシピや味調整メモ、出典メタデータを端末やクラウドに書き出して永久保存できます。
+                  わが家で記録した大切なレシピや味調整メモ、直近1年分のカレンダー調理履歴を端末やクラウドに書き出して保存できます。
                 </Text>
 
                 <TouchableOpacity
@@ -2444,9 +3007,9 @@ export default function App() {
                   onPress={handleExportJsonBackup}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.backupActionTitle}>📥 全レシピをファイルに書き出し (.json)</Text>
+                  <Text style={styles.backupActionTitle}>📥 全レシピ＆カレンダー履歴を書き出し (.json)</Text>
                   <Text style={styles.backupActionDesc}>
-                    全{allRecipes.length}品の完全なレシピデータ（出典メタデータ・分量・手順インデックス・家族評価・メモ）をJSONファイルとして保存します。
+                    全{allRecipes.length}品のレシピデータと直近1年分のカレンダー調理履歴をJSONファイルとして保存します。
                   </Text>
                 </TouchableOpacity>
 
@@ -2750,7 +3313,7 @@ export default function App() {
       </Modal>
 
       {/* =============================================================
-          ★ モーダル③：調理完了時の家族評価 ＆「作レポ・応援（エンゲージメント還元）」モーダル（要件4）
+          ★ モーダル③：「作った！」記録完了 ＆ 家族評価 ＆ クリエイター応援モーダル
       ============================================================= */}
       <Modal
         visible={isCookingCompleteModalVisible}
@@ -2760,9 +3323,9 @@ export default function App() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>🎉 調理お疲れさまでした！</Text>
+            <Text style={styles.modalTitle}>🎉「作った！」を記録しました！</Text>
             <Text style={styles.modalSubTitle}>
-              「{completedRecipe?.title}」を今日作った料理に記録しました。家族の評価を残しましょう！
+              「{completedRecipe?.title}」をカレンダー（{formatDateKeyJapanese(selectedCalendarDateKey)}）に記録しました。家族の評価も残せます！
             </Text>
 
             {completedRecipe ? (
@@ -2817,13 +3380,12 @@ export default function App() {
               style={[styles.modalSubmitBtn, { marginTop: 10 }]}
               onPress={() => {
                 setIsCookingCompleteModalVisible(false);
-                if (completedRecipe) {
-                  handleEditPress(completedRecipe);
-                }
+                closeSubViewSmoothly();
+                switchTabSmoothly('calendar');
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.modalSubmitBtnText}>✍️ 味調整メモ・完成写真も記録する</Text>
+              <Text style={styles.modalSubmitBtnText}>📅 カレンダーで記録を確認する</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
