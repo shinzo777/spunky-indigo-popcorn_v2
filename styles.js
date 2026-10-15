@@ -150,7 +150,7 @@ export const getStyles = (t) =>
       backgroundColor: t.primary,
       paddingHorizontal: 15,
       paddingVertical: 10,
-      borderRadius: 999, // カプセルボタン
+      borderRadius: 999,
       shadowColor: t.primary,
       shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.25,
@@ -234,7 +234,7 @@ export const getStyles = (t) =>
     filterTab: {
       paddingVertical: 6,
       paddingHorizontal: 14,
-      borderRadius: 999, // カプセル形状
+      borderRadius: 999,
       backgroundColor: t.cardBg,
       marginRight: 8,
       borderWidth: 1,
@@ -284,7 +284,7 @@ export const getStyles = (t) =>
     cardBadgeItem: {
       paddingHorizontal: 7,
       paddingVertical: 3,
-      borderRadius: 999, // カプセル
+      borderRadius: 999,
       backgroundColor: t.chipBg,
     },
     cardBadgeItemText: { fontSize: 10.5, fontWeight: '600', color: t.textSub },
@@ -300,7 +300,7 @@ export const getStyles = (t) =>
       backgroundColor: t.primary,
       paddingVertical: 14,
       paddingHorizontal: 22,
-      borderRadius: 999, // 完全なピル形状
+      borderRadius: 999,
       elevation: 6,
       shadowColor: t.primary,
       shadowOpacity: 0.35,
@@ -324,6 +324,276 @@ export const getStyles = (t) =>
       borderColor: t.primaryBorder,
     },
     detailTagText: { fontSize: 12, fontWeight: '700', color: t.primary },
+
+    // ★ 要件3-1：ヘッダー（タイトル）直下の「クリエイター・クレジットカード」
+    creatorCreditCard: {
+      backgroundColor: t.cardBg,
+      borderRadius: 20,
+      padding: 16,
+      marginBottom: 14,
+      borderWidth: 1.5,
+      borderColor: t.primaryBorder,
+      shadowColor: '#2C1810',
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.06,
+      shadowRadius: 14,
+      elevation: 3,
+    },
+    creatorCreditTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    creatorPlatformIconWrap: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    creatorCreditInfoCol: {
+      flex: 1,
+    },
+    creatorBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 4,
+    },
+    creatorPlatformBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    creatorPlatformBadgeText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    bookmarkModeBadge: {
+      backgroundColor: '#FEF3C7',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+    },
+    bookmarkModeBadgeText: {
+      fontSize: 10.5,
+      fontWeight: '700',
+      color: '#B45309',
+    },
+    creatorNameText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: t.textMain,
+    },
+    creatorOgpTitleText: {
+      fontSize: 11.5,
+      color: t.textMuted,
+      marginTop: 2,
+    },
+    creatorCreditCtaBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      shadowColor: '#2C1810',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.15,
+      shadowRadius: 6,
+      elevation: 2,
+    },
+    creatorCreditCtaBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+
+    // ★ 要件3-4：SNS公式埋め込み（Embed）プレイヤー
+    socialEmbedContainer: {
+      backgroundColor: t.cardBg,
+      borderRadius: 20,
+      padding: 14,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: t.border,
+      shadowColor: '#2C1810',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.04,
+      shadowRadius: 10,
+      elevation: 2,
+    },
+    socialEmbedTabRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 10,
+    },
+    socialEmbedTabBtn: {
+      flex: 1,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      backgroundColor: t.chipBg,
+      alignItems: 'center',
+    },
+    socialEmbedTabBtnActive: {
+      backgroundColor: t.primary,
+    },
+    socialEmbedTabText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: t.textSub,
+    },
+    socialEmbedTabTextActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    socialEmbedBody: {
+      marginTop: 2,
+    },
+    socialEmbedFrameWrapper: {
+      width: '100%',
+      height: 230,
+      borderRadius: 14,
+      overflow: 'hidden',
+      backgroundColor: '#000',
+    },
+    socialEmbedFallbackBox: {
+      backgroundColor: t.primaryLight,
+      borderRadius: 14,
+      padding: 16,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: t.primaryBorder,
+    },
+    socialEmbedFallbackTitle: {
+      fontSize: 14.5,
+      fontWeight: '700',
+      color: t.textMain,
+      marginBottom: 6,
+      textAlign: 'center',
+    },
+    socialEmbedFallbackDesc: {
+      fontSize: 12,
+      color: t.textSub,
+      lineHeight: 18,
+      textAlign: 'center',
+      marginBottom: 12,
+    },
+    socialEmbedOpenBtn: {
+      backgroundColor: t.primary,
+      paddingVertical: 10,
+      paddingHorizontal: 18,
+      borderRadius: 999,
+    },
+    socialEmbedOpenBtnText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    socialEmbedCaption: {
+      fontSize: 11,
+      color: t.textMuted,
+      marginTop: 8,
+      textAlign: 'center',
+    },
+
+    // ★ 要件3-2：調理手順エリア下部の「コツ・写真確認」誘導バナー
+    creatorTipsBanner: {
+      backgroundColor: t.isDark ? '#2B2118' : '#FFFBEB',
+      borderWidth: 1.5,
+      borderColor: t.isDark ? '#78350F' : '#FCD34D',
+      borderRadius: 18,
+      padding: 16,
+      marginTop: 18,
+    },
+    creatorTipsBannerText: {
+      fontSize: 13.5,
+      fontWeight: '700',
+      color: t.isDark ? '#FDE68A' : '#92400E',
+      lineHeight: 21,
+      marginBottom: 12,
+    },
+    creatorTipsBannerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#D97706',
+      paddingVertical: 11,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+    },
+    creatorTipsBannerBtnText: {
+      color: '#FFFFFF',
+      fontSize: 13.5,
+      fontWeight: '700',
+    },
+
+    // ★ 要件4：調理完了・家族評価登録時の「作レポ・応援（エンゲージメント還元）」カード
+    creatorSupportCard: {
+      backgroundColor: t.isDark ? '#14291E' : '#F0FDF4',
+      borderWidth: 1.5,
+      borderColor: t.isDark ? '#166534' : '#86EFAC',
+      borderRadius: 18,
+      padding: 16,
+      marginTop: 14,
+      marginBottom: 8,
+    },
+    creatorSupportHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    creatorSupportEmoji: {
+      fontSize: 22,
+      marginRight: 10,
+    },
+    creatorSupportMessage: {
+      flex: 1,
+      fontSize: 13.5,
+      fontWeight: '700',
+      color: t.isDark ? '#BBF7D0' : '#166534',
+      lineHeight: 20,
+    },
+    creatorSupportBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#16A34A',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+    },
+    creatorSupportBtnText: {
+      color: '#FFFFFF',
+      fontSize: 13.5,
+      fontWeight: '700',
+    },
+
+    // ★ ブックマークモード案内ボックス（isScrapedAllowed === false 時）
+    bookmarkProtectedBox: {
+      backgroundColor: t.primaryLight,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: t.primaryBorder,
+      marginVertical: 8,
+    },
+    bookmarkProtectedTitle: {
+      fontSize: 14.5,
+      fontWeight: '700',
+      color: t.primary,
+      marginBottom: 6,
+    },
+    bookmarkProtectedDesc: {
+      fontSize: 13,
+      color: t.textSub,
+      lineHeight: 20,
+    },
 
     bigCookStartBtn: {
       backgroundColor: t.primary,
@@ -547,7 +817,7 @@ export const getStyles = (t) =>
       backgroundColor: t.chipBg,
       paddingVertical: 6,
       paddingHorizontal: 12,
-      borderRadius: 999, // ピル
+      borderRadius: 999,
     },
     categoryChipSelected: { backgroundColor: t.primary },
     categoryChipText: { fontSize: 12.5, fontWeight: '600', color: t.textSub },
@@ -691,7 +961,7 @@ export const getStyles = (t) =>
     },
     photoSelectIcon: { fontSize: 24, marginBottom: 4 },
     photoSelectText: { fontSize: 12.5, color: t.textMuted, fontWeight: '500' },
-    // ★ モーダル（レシピ追加方法の選択・URL入力）
+    // ★ モーダル（レシピ追加方法の選択・URL入力・調理完了応援）
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(44, 24, 16, 0.45)',
@@ -701,7 +971,7 @@ export const getStyles = (t) =>
     },
     modalContainer: {
       width: '100%',
-      maxWidth: 400,
+      maxWidth: 420,
       backgroundColor: t.cardBg,
       borderRadius: 24,
       padding: 24,
@@ -712,7 +982,7 @@ export const getStyles = (t) =>
       elevation: 6,
     },
     modalTitle: { fontSize: 17, fontWeight: '700', color: t.textMain, textAlign: 'center', marginBottom: 6 },
-    modalSubTitle: { fontSize: 12.5, color: t.textMuted, textAlign: 'center', marginBottom: 18 },
+    modalSubTitle: { fontSize: 12.5, color: t.textMuted, textAlign: 'center', marginBottom: 18, lineHeight: 18 },
     modalChoiceBtn: {
       flexDirection: 'row',
       alignItems: 'center',

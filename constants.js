@@ -5,6 +5,101 @@ export const FIREBASE_PROJECT_ID = 'spunky-indigo-popcorn';
 export const AI_PROXY_API_URL = 'https://white-fog-f0b1.wagaya-no-recipe-api.workers.dev/';
 export const APP_SECRET_TOKEN = 'wagaya-recipe-2026-secret-token';
 
+// -------------------------------------------------------------
+// 要件1：出典プラットフォーム定義
+// -------------------------------------------------------------
+export const SOURCE_PLATFORMS = {
+  youtube: {
+    key: 'youtube',
+    label: 'YouTube',
+    icon: '▶️',
+    ionicon: 'logo-youtube',
+    accentColor: '#DC2626',
+    bgLight: '#FEF2F2',
+    borderLight: '#FECACA',
+    actionLabel: '元のYouTube動画を見る',
+  },
+  instagram: {
+    key: 'instagram',
+    label: 'Instagram',
+    icon: '📸',
+    ionicon: 'logo-instagram',
+    accentColor: '#DB2777',
+    bgLight: '#FDF2F8',
+    borderLight: '#FBCFE8',
+    actionLabel: '元のInstagram投稿を見る',
+  },
+  x: {
+    key: 'x',
+    label: 'X (旧Twitter)',
+    icon: '𝕏',
+    ionicon: 'logo-twitter',
+    accentColor: '#1D4ED8',
+    bgLight: '#EFF6FF',
+    borderLight: '#BFDBFE',
+    actionLabel: '元のX投稿を見る',
+  },
+  web: {
+    key: 'web',
+    label: 'Webレシピ',
+    icon: '🌐',
+    ionicon: 'globe-outline',
+    accentColor: '#C85A17',
+    bgLight: '#FDF3EB',
+    borderLight: '#F5D7C3',
+    actionLabel: '元のレシピ記事を見る',
+  },
+  manual: {
+    key: 'manual',
+    label: '手動・オリジナル',
+    icon: '✍️',
+    ionicon: 'create-outline',
+    accentColor: '#5B8A72',
+    bgLight: '#F3ECE2',
+    borderLight: '#E8DCCE',
+    actionLabel: '元のページを見る',
+  },
+};
+
+// -------------------------------------------------------------
+// 要件2：AIレシピ抽出用システムプロンプト（著作権配慮・超要約化）
+// -------------------------------------------------------------
+export const RECIPE_EXTRACTION_SYSTEM_PROMPT = `あなたはレシピ考案者（クリエイター）の権利と著作権を厳格に保護するレシピ構造化AIアシスタントです。
+入力されたWebページやSNS（YouTube / Instagram / X等）の情報・テキストから、以下の4つのルールを厳守してJSON形式のみで出力してください。
+
+【厳守ルール】
+1. 事実データのみの抽出（表現のコピー禁止）
+   - クリエイター独自の言い回し、導入のエピソード、コラム、独自のコツ表現、感想は絶対にコピーしないこと。
+   - 「材料リスト（食材名・分量・単位）」と「調理手順の最小限の骨組み」という、著作権の及ばない事実情報のみを抽出・正規化すること。
+2. 調理手順の「インデックス化（1行超要約）」
+   - 各手順（steps）は原文を丸写しせず、「① 玉ねぎを薄切りにする」「② 中火で豚肉を炒め、調味料Aを加える」のように、1ステップあたり最大40文字程度の簡潔な動詞表現（インデックス）に要約すること。
+   - 微妙な火加減のコツや詳細なノウハウはあえて省略し、ユーザーが初回調理時に元サイト（動画や記事）を見に行く動機を残すこと。
+3. クリエイター名の抽出
+   - ページ内のメタデータ、著者名、チャンネル名、SNSアカウント名、サイト名から考案者（creatorName）を特定してJSONに含めること（特定できない場合は null）。
+   - 元ページのOGPタイトルがわかる場合は ogpTitle に含めること（不明な場合は null）。
+   - robots.txt や meta noarchive 等により抽出・要約が禁止されている場合は isScrapedAllowed を false にし、ingredients と steps は空配列にすること。
+4. 画像の非保存
+   - 元サイト内の料理画像URLや工程写真URLを抽出・出力する処理は一切行わないこと。
+
+【出力JSONフォーマット（コードブロックなしの純粋なJSONオブジェクト）】
+{
+  "title": "料理名（簡潔な名称）",
+  "creatorName": "考案者名・チャンネル名・アカウント名・サイト名（不明時は null）",
+  "ogpTitle": "元ページのOGPタイトル（不明時は null）",
+  "isScrapedAllowed": true,
+  "cookingTime": 15,
+  "category": "主菜",
+  "ingredients": [
+    { "name": "豚ロース肉", "amount": "250", "unit": "g" },
+    { "name": "玉ねぎ", "amount": "1/2", "unit": "個" }
+  ],
+  "steps": [
+    "① 玉ねぎを薄切りにし、調味料を合わせる",
+    "② フライパンで豚肉の両面を焼き一度取り出す",
+    "③ 玉ねぎを炒めて肉を戻し、タレを絡める"
+  ]
+}`;
+
 // ★ 高級感のある温かいカフェ・北欧ニュアンスパレット
 export const THEMES = {
   light: {
@@ -117,8 +212,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 15,
     isBento: true,
     isMealPrep: false,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '生姜多めがわが家の黄金比。タレはしっかり絡める！',
-    extractedText: '豚の生姜焼き\n【材料】（2人分）\n・豚ロース肉（生姜焼き用）：250g\n・玉ねぎ：1/2個\n・生姜（すりおろし）：小さじ1\n・醤油：大さじ2\n・みりん：大さじ2\n・酒：大さじ1\n・サラダ油：小さじ1\n【作り方】\n1. 玉ねぎは薄切りにし、生姜・醤油・みりん・酒を合わせてタレを作る。\n2. フライパンに油を熱し、豚肉を両面焼き色がつくまで焼いて一度取り出す。\n3. 同じフライパンで玉ねぎを炒め、しんなりしたら肉を戻し、タレを一気に加えて絡める。',
+    extractedText: '豚の生姜焼き\n【材料】（2人分）\n・豚ロース肉（生姜焼き用）：250g\n・玉ねぎ：1/2個\n・生姜（すりおろし）：小さじ1\n・醤油：大さじ2\n・みりん：大さじ2\n・酒：大さじ1\n・サラダ油：小さじ1\n【作り方】\n① 玉ねぎを薄切りにし、調味料を合わせる\n② フライパンで豚肉を両面焼き一度取り出す\n③ 玉ねぎを炒めて肉を戻し、タレを絡める',
   },
   {
     id: 'preset_02',
@@ -130,8 +230,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 15,
     isBento: true,
     isMealPrep: false,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: 'キャベツのシャキシャキ感を残すため強火で一気に炒める。',
-    extractedText: '豚肉とキャベツの味噌炒め\n【材料】（2人分）\n・豚バラ肉：200g\n・キャベツ：1/4個\n・ピーマン：2個\n・味噌：大さじ2\n・みりん：大さじ1\n・酒：大さじ1\n・砂糖：小さじ1\n・ごま油：小さじ1\n【作り方】\n1. キャベツとピーマンは一口大にざく切りにする。\n2. フライパンにごま油を熱し、豚肉を炒める。\n3. キャベツとピーマンを加えて強火で手早く炒め合わせる。\n4. 合わせた調味料（味噌・みりん・酒・砂糖）を回し入れ、全体に絡める。',
+    extractedText: '豚肉とキャベツの味噌炒め\n【材料】（2人分）\n・豚バラ肉：200g\n・キャベツ：1/4個\n・ピーマン：2個\n・味噌：大さじ2\n・みりん：大さじ1\n・酒：大さじ1\n・砂糖：小さじ1\n・ごま油：小さじ1\n【作り方】\n① キャベツとピーマンを一口大に切る\n② ごま油で豚バラ肉を炒める\n③ 野菜を加えて強火で手早く炒め合わせる\n④ 合わせた味噌ダレを回し入れ全体に絡める',
   },
   {
     id: 'preset_03',
@@ -143,8 +248,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 30,
     isBento: true,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '中火でしっかり蒸し焼きにして肉汁を閉じ込める。',
-    extractedText: 'ジューシーハンバーグ\n【材料】（2人分）\n・合い挽き肉：300g\n・玉ねぎ：1/2個\n・卵：1個\n・パン粉：大さじ3\n・牛乳：大さじ2\n・塩・胡椒：少々\n・サラダ油：小さじ1\n【作り方】\n1. 玉ねぎをみじん切りにして電子レンジで1分半加熱し冷ます。\n2. ボウルに挽肉と塩を入れて粘りが出るまでよくこねる。\n3. 玉ねぎ、卵、牛乳で湿らせたパン粉、胡椒を加えて混ぜ成形する。\n4. フライパンで両面に焼き色をつけ、蓋をして弱火で蒸し焼きにする。',
+    extractedText: 'ジューシーハンバーグ\n【材料】（2人分）\n・合い挽き肉：300g\n・玉ねぎ：1/2個\n・卵：1個\n・パン粉：大さじ3\n・牛乳：大さじ2\n・塩・胡椒：少々\n・サラダ油：小さじ1\n【作り方】\n① みじん切り玉ねぎをレンジ加熱し冷ます\n② ボウルで挽肉と塩を粘りが出るまでこねる\n③ 残りの材料を加えて混ぜ、小判型に成形する\n④ 両面を焼き、蓋をして弱火で蒸し焼きにする',
   },
   {
     id: 'preset_04',
@@ -156,10 +266,15 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 25,
     isBento: true,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '二度揚げで外はカリッと、中はジューシーに。',
-    extractedText: '鶏のから揚げ\n【材料】（2人分）\n・鶏もも肉：300g\n・醤油：大さじ1.5\n・酒：大さじ1\n・生姜（すりおろし）：小さじ1\n・にんにく（すりおろし）：小さじ1/2\n・片栗粉：大さじ3\n・揚げ油：適量\n【作り方】\n1. 鶏もも肉を一口大に切る。\n2. ポリ袋に鶏肉、醤油、酒、生姜、にんにくを入れてよく揉み込み15分置く。\n3. 片栗粉を全体にしっかりまぶす。\n4. 170度の油で3分揚げ、一度取り出して2分休ませ、180度で二度揚げする。',
+    extractedText: '鶏のから揚げ\n【材料】（2人分）\n・鶏もも肉：300g\n・醤油：大さじ1.5\n・酒：大さじ1\n・生姜（すりおろし）：小さじ1\n・にんにく（すりおろし）：小さじ1/2\n・片栗粉：大さじ3\n・揚げ油：適量\n【作り方】\n① 鶏もも肉を一口大に切る\n② 調味料を揉み込み15分置く\n③ 片栗粉を全体にまぶす\n④ 油でカラッと二度揚げする',
   },
-      {
+  {
     id: 'preset_05',
     title: 'ほっこり肉じゃが',
     category: '主菜',
@@ -169,10 +284,14 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 35,
     isBento: false,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '少し冷ますと味が染み込んでさらに美味しくなる。',
-    extractedText: 'ほっこり肉じゃが\n【材料】（2人分）\n・豚肉（または牛肉）：150g\n・じゃがいも：2個\n・玉ねぎ：1/2個\n・人参：1/2本\n・水：200ml\n・醤油：大さじ2\n・みりん：大さじ2\n・砂糖：大さじ1\n・だしの素：小さじ1/2\n【作り方】\n1. じゃがいもは乱切りにして水にさらし、玉ねぎ、人参を切る。\n2. 鍋に油を熱し、肉を炒め、野菜を加えて炒め合わせる。\n3. 水、だしの素、砂糖、みりんを加えて落とし蓋をし10分煮る。\n4. 醤油を加え、煮汁が少なくなるまでさらに7〜8分煮詰める。',
+    extractedText: 'ほっこり肉じゃが\n【材料】（2人分）\n・豚肉（または牛肉）：150g\n・じゃがいも：2個\n・玉ねぎ：1/2個\n・人参：1/2本\n・水：200ml\n・醤油：大さじ2\n・みりん：大さじ2\n・砂糖：大さじ1\n・だしの素：小さじ1/2\n【作り方】\n① 野菜と肉を食べやすい大きさに切る\n② 鍋に油を熱し、肉と野菜を炒め合わせる\n③ 水・だし・砂糖・みりんを加え10分煮る\n④ 醤油を加え、煮汁が減るまで煮詰める',
   },
-,
   {
     id: 'preset_06',
     title: 'やみつきコールスロー',
@@ -183,8 +302,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 10,
     isBento: false,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: 'しっかり水分を絞るのが水っぽくならないコツ。',
-    extractedText: 'やみつきコールスロー\n【材料】（2〜3人分）\n・キャベツ：1/4個\n・人参：1/4本\n・コーン缶：大さじ3\n・マヨネーズ：大さじ2\n・酢：小さじ1\n・砂糖：小さじ1/2\n・塩・胡椒：少々\n【作り方】\n1. キャベツと人参は千切りにし、塩もみして10分置き水気をしっかり絞る。\n2. ボウルにマヨネーズ、酢、砂糖、胡椒を混ぜ合わせる。\n3. 水気を絞った野菜とコーンを加えてよく和え、冷蔵庫で冷やす。',
+    extractedText: 'やみつきコールスロー\n【材料】（2〜3人分）\n・キャベツ：1/4個\n・人参：1/4本\n・コーン缶：大さじ3\n・マヨネーズ：大さじ2\n・酢：小さじ1\n・砂糖：小さじ1/2\n・塩・胡椒：少々\n【作り方】\n① キャベツと人参を千切りにし塩もみして絞る\n② ボウルで調味料を混ぜ合わせる\n③ 野菜とコーンを加えて和え、冷蔵庫で冷やす',
   },
   {
     id: 'preset_07',
@@ -196,8 +320,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 10,
     isBento: true,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: 'すりごま多めが香ばしくて美味しい。',
-    extractedText: 'ほうれん草のごま和え\n【材料】（2人分）\n・ほうれん草：1袋（200g）\n・白すりごま：大さじ2\n・醤油：大さじ1\n・砂糖：小さじ1\n【作り方】\n1. 沸騰したお湯に塩少々を入れ、ほうれん草を茹でて冷水にとり水気を絞る。\n2. 3〜4cm長さに切る。\n3. ボウルですりごま、醤油、砂糖をよく混ぜ合わせ、ほうれん草を加えて和える。',
+    extractedText: 'ほうれん草のごま和え\n【材料】（2人分）\n・ほうれん草：1袋（200g）\n・白すりごま：大さじ2\n・醤油：大さじ1\n・砂糖：小さじ1\n【作り方】\n① ほうれん草を塩茹でして水気を絞る\n② 3〜4cm長さに切る\n③ すりごま・醤油・砂糖と和える',
   },
   {
     id: 'preset_08',
@@ -209,8 +338,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 20,
     isBento: true,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: 'ごま油の風味を効かせて甘辛く。',
-    extractedText: '定番きんぴらごぼう\n【材料】（2〜3人分）\n・ごぼう：1本\n・人参：1/2本\n・ごま油：小さじ2\n・醤油：大さじ1.5\n・みりん：大さじ1\n・酒：大さじ1\n・砂糖：小さじ1\n・白ごま：少々\n【作り方】\n1. ごぼうと人参は細切りにし、ごぼうは水に5分さらして水気を切る。\n2. フライパンにごま油を熱し、ごぼうと人参をしんなりするまで炒める。\n3. 調味料を加え、汁気がなくなるまで炒り煮にして白ごまを振る。',
+    extractedText: '定番きんぴらごぼう\n【材料】（2〜3人分）\n・ごぼう：1本\n・人参：1/2本\n・ごま油：小さじ2\n・醤油：大さじ1.5\n・みりん：大さじ1\n・酒：大さじ1\n・砂糖：小さじ1\n・白ごま：少々\n【作り方】\n① ごぼうと人参を細切りにし水にさらす\n② ごま油でしんなりするまで炒める\n③ 調味料を加え汁気がなくなるまで炒り煮する',
   },
   {
     id: 'preset_09',
@@ -222,8 +356,13 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 25,
     isBento: false,
     isMealPrep: true,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '根菜の旨味が溶け出す冬の定番。',
-    extractedText: '具だくさん豚汁\n【材料】（3〜4人分）\n・豚バラ肉：100g\n・大根：3cm\n・人参：1/3本\n・ごぼう：1/3本\n・こんにゃく：1/3枚\n・長ねぎ：1/2本\n・だし汁：600ml\n・味噌：大さじ3\n・ごま油：小さじ1\n【作り方】\n1. 具材を食べやすい大きさに切る。\n2. 鍋にごま油を熱し、豚肉と野菜を炒める。\n3. だし汁を加えて煮立たせ、弱火で10分煮る。\n4. 味噌を溶き入れ、長ねぎを加えてひと煮立ちさせる。',
+    extractedText: '具だくさん豚汁\n【材料】（3〜4人分）\n・豚バラ肉：100g\n・大根：3cm\n・人参：1/3本\n・ごぼう：1/3本\n・こんにゃく：1/3枚\n・長ねぎ：1/2本\n・だし汁：600ml\n・味噌：大さじ3\n・ごま油：小さじ1\n【作り方】\n① 具材を食べやすい大きさに切る\n② ごま油で豚肉と根菜を炒める\n③ だし汁を加え弱火で10分煮る\n④ 味噌を溶き入れ、長ねぎを加える',
   },
   {
     id: 'preset_10',
@@ -235,7 +374,12 @@ export const PRESET_DEFAULT_RECIPES = [
     cookingTime: 10,
     isBento: false,
     isMealPrep: false,
+    sourceUrl: '',
+    sourcePlatform: 'manual',
+    creatorName: null,
+    ogpTitle: null,
+    isScrapedAllowed: true,
     notes: '味噌を入れたら沸騰させないのが香りを残す秘訣。',
-    extractedText: '豆腐とわかめの王道味噌汁\n【材料】（2人分）\n・絹ごし豆腐：1/2丁\n・乾燥わかめ：大さじ1\n・長ねぎ：1/4本\n・だし汁：400ml\n・味噌：大さじ1.5〜2\n【作り方】\n1. 豆腐はさいの目切り、長ねぎは小口切り、わかめは戻す。\n2. 鍋にだし汁を入れて沸かし、豆腐を加える。\n3. 弱火にして味噌を溶き入れ、わかめとねぎを加えて火を止める。',
+    extractedText: '豆腐とわかめの王道味噌汁\n【材料】（2人分）\n・絹ごし豆腐：1/2丁\n・乾燥わかめ：大さじ1\n・長ねぎ：1/4本\n・だし汁：400ml\n・味噌：大さじ1.5〜2\n【作り方】\n① 豆腐とねぎを切り、わかめを戻す\n② 鍋にだし汁を沸かし、豆腐を加える\n③ 弱火で味噌を溶き、わかめとねぎを加える',
   },
 ];

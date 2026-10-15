@@ -1,6 +1,359 @@
 import { Platform } from 'react-native';
 import { STAPLE_SEASONINGS_REGEX } from './constants';
 
+const CIRCLED_NUMBERS = [
+  '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
+  '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳',
+];
+
+// =============================================================
+// 要件1：URLのドメインから sourcePlatform を自動判定
+// 'youtube' | 'instagram' | 'x' | 'web' | 'manual'
+// =============================================================
+export const detectSourcePlatform = (url) => {
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    return 'manual';
+  }
+  let normalized = url.trim();
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`;
+  }
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('youtube.com') || host.includes('youtu.be')) {
+      return 'youtube';
+    }
+    if (host.includes('instagram.com') || host.includes('instagr.am')) {
+      return 'instagram';
+    }
+    if (
+      host === 'x.com' ||
+      host.endsWith('.x.com') ||
+      host.includes('twitter.com') ||
+      host === 't.co'
+    ) {
+      return 'x';
+    }
+    return 'web';
+  } catch (e) {
+    const lower = normalized.toLowerCase();
+    if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube';
+    if (lower.includes('instagram.com')) return 'instagram';
+    if (lower.includes('x.com/') || lower.includes('twitter.com/')) return 'x';
+    return 'web';
+  }
+};
+
+// =============================================================
+// 要件1：URLのドメイン・パスからデフォルトのサイト/アカウント名を推定（フォールバック用）
+// =============================================================
+export const inferCreatorNameFromUrl = (url) => {
+  if (!url || typeof url !== 'string' || !url.trim()) return null;
+  let normalized = url.trim();
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`;
+  }
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const pathParts = parsed.pathname.split('/').filter(Boolean);
+
+    if (host.includes('youtube.com') || host.includes('youtu.be')) {
+      const handlePart = pathParts.find((p) => p.startsWith('@'));
+      if (handlePart) return handlePart;
+      return null;
+    }
+    if (host.includes('instagram.com')) {
+      if (pathParts.length > 0 && !['p', 'reel', 'reels', 'tv', 'stories'].includes(pathParts[0])) {
+        return `@${pathParts[0].replace(/^@/, '')}`;
+      }
+      return null;
+    }
+    if (host === 'x.com' || host.includes('twitter.com')) {
+      if (pathParts.length > 0 && !['i', 'intent', 'search', 'home', 'explore'].includes(pathParts[0])) {
+        return `@${pathParts[0].replace(/^@/, '')}`;
+      }
+      return null;
+    }
+    if (host.includes('cookpad.com')) return 'クックパッド';
+    if (host.includes('oceans-nadia.com')) return 'Nadia (ナディア)';
+    if (host.includes('kurashiru.com')) return 'クラシル';
+    if (host.includes('delishkitchen.tv')) return 'DELISH KITCHEN';
+    if (host.includes('sirogohan.com')) return '白ごはん.com';
+    if (host.includes('orangepage.net')) return 'オレンジページnet';
+    if (host.includes('lettuceclub.net')) return 'レタスクラブ';
+    if (host.includes('macaro-ni.jp')) return 'macaroni';
+    if (host.includes('recipe.rakuten.co.jp')) return '楽天レシピ';
+    return host;
+  } catch (e) {
+    return null;
+  }
+};
+
+// =============================================================
+// 要件1：既存レシピデータとの後方互換性を保つ正規化関数
+// =============================================================
+export const normalizeRecipeRecord = (recipe) => {
+  if (!recipe) return recipe;
+  const rawSourceUrl = (recipe.sourceUrl ?? recipe.webUrl ?? '').trim();
+  const sourcePlatform =
+    recipe.sourcePlatform && recipe.sourcePlatform !== 'manual'
+      ? recipe.sourcePlatform
+      : detectSourcePlatform(rawSourceUrl);
+  const creatorName =
+    recipe.creatorName !== undefined && recipe.creatorName !== ''
+      ? recipe.creatorName
+      : inferCreatorNameFromUrl(rawSourceUrl);
+  const ogpTitle = recipe.ogpTitle ?? null;
+  const isScrapedAllowed =
+    typeof recipe.isScrapedAllowed === 'boolean' ? recipe.isScrapedAllowed : true;
+
+  return {
+    ...recipe,
+    sourceUrl: rawSourceUrl,
+    webUrl: rawSourceUrl, // 既存フィールドとの互換維持
+    sourcePlatform,
+    creatorName: creatorName || null,
+    ogpTitle,
+    isScrapedAllowed,
+  };
+};
+
+// =============================================================
+// 要件2：調理手順の1行超要約インデックス化（最大40文字程度）
+// =============================================================
+export const formatStepAsConciseIndex = (rawStep, index) => {
+  if (!rawStep) return '';
+  const prefix = CIRCLED_NUMBERS[index] || `${index + 1}.`;
+  let cleaned = String(rawStep)
+    .replace(/^(?:step\s*\d+|手順\s*\d+|\d+[\.\、\)\s]+|[①-⑳]\s*)/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // コツ・ポイント等の補足文が混入している場合は最初の文のみ抽出してインデックス化
+  const sentenceParts = cleaned.split(/[。！？]/).filter((s) => s.trim().length > 0);
+  if (sentenceParts.length > 0) {
+    cleaned = sentenceParts[0].trim();
+  }
+
+  const MAX_STEP_CHARS = 40;
+  if (cleaned.length > MAX_STEP_CHARS) {
+    cleaned = `${cleaned.slice(0, MAX_STEP_CHARS - 1)}…`;
+  }
+
+  return `${prefix} ${cleaned}`;
+};
+
+// =============================================================
+// 要件2：AI抽出レスポンス（JSONまたはテキスト）の解析・正規化
+// =============================================================
+export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMeta = {}) => {
+  const sourcePlatform = detectSourcePlatform(sourceUrl);
+  const fallbackCreator = inferCreatorNameFromUrl(sourceUrl);
+
+  // API側で明示的に isScrapedAllowed === false が返された場合（ブックマークモード）
+  if (apiMeta && apiMeta.isScrapedAllowed === false) {
+    const fallbackTitle = apiMeta.ogpTitle || 'ブックマークしたレシピ';
+    return {
+      title: fallbackTitle,
+      creatorName: apiMeta.creatorName || fallbackCreator,
+      ogpTitle: apiMeta.ogpTitle || null,
+      sourceUrl,
+      sourcePlatform,
+      isScrapedAllowed: false,
+      cookingTime: 15,
+      category: '主菜',
+      extractedText: '',
+    };
+  }
+
+  if (!rawResponseText || typeof rawResponseText !== 'string') {
+    return null;
+  }
+
+  // JSONオブジェクトの抽出を試みる
+  const jsonMatch = rawResponseText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const isScrapedAllowed =
+        typeof parsed.isScrapedAllowed === 'boolean' ? parsed.isScrapedAllowed : true;
+      const creatorName = parsed.creatorName || apiMeta?.creatorName || fallbackCreator || null;
+      const ogpTitle = parsed.ogpTitle || apiMeta?.ogpTitle || null;
+      const recipeTitle =
+        (parsed.title || ogpTitle || '無題のレシピ').replace(/[#*]/g, '').trim();
+
+      if (!isScrapedAllowed) {
+        return {
+          title: recipeTitle,
+          creatorName,
+          ogpTitle,
+          sourceUrl,
+          sourcePlatform,
+          isScrapedAllowed: false,
+          cookingTime: Number(parsed.cookingTime) || 15,
+          category: parsed.category || '主菜',
+          extractedText: '',
+        };
+      }
+
+      const ingLines = Array.isArray(parsed.ingredients)
+        ? parsed.ingredients
+            .map((ing) => {
+              if (typeof ing === 'string') {
+                return `・${ing.replace(/^[・\-\*•\s]+/, '').trim()}`;
+              }
+              const name = (ing?.name || '').trim();
+              const amount = (ing?.amount || '').trim();
+              const unit = (ing?.unit || '').trim();
+              if (!name) return null;
+              const qty = `${amount}${unit}`.trim();
+              return qty ? `・${name}：${qty}` : `・${name}`;
+            })
+            .filter(Boolean)
+        : [];
+
+      const stepLines = Array.isArray(parsed.steps)
+        ? parsed.steps
+            .map((step, idx) => formatStepAsConciseIndex(step, idx))
+            .filter(Boolean)
+        : [];
+
+      const formattedText = [
+        recipeTitle,
+        '【材料】（2人分）',
+        ...(ingLines.length > 0 ? ingLines : ['・材料情報は元レシピをご確認ください']),
+        '【作り方】',
+        ...(stepLines.length > 0 ? stepLines : ['① 詳しい手順は元レシピをご確認ください']),
+      ].join('\n');
+
+      return {
+        title: recipeTitle,
+        creatorName,
+        ogpTitle,
+        sourceUrl,
+        sourcePlatform,
+        isScrapedAllowed: true,
+        cookingTime: Number(parsed.cookingTime) || 15,
+        category: parsed.category || '主菜',
+        extractedText: formattedText,
+      };
+    } catch (e) {
+      // JSONパース失敗時は下のテキスト正規化フォールバックへ進む
+    }
+  }
+
+  // 従来のプレーンテキスト形式が返ってきた場合でも、著作権配慮（40文字インデックス要約）を適用する
+  const lines = rawResponseText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const autoTitle = lines[0]?.replace(/[#*]/g, '').trim() || apiMeta?.ogpTitle || '無題のレシピ';
+
+  let detectedCreator = apiMeta?.creatorName || fallbackCreator || null;
+  const normalizedLines = [];
+  let inSteps = false;
+  let stepCounter = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // 考案者・著者行があれば抽出
+    const creatorMatch = line.match(/^(?:考案者|著者|作者|クリエイター|チャンネル名|アカウント)[：:]\s*(.+)$/);
+    if (creatorMatch) {
+      detectedCreator = creatorMatch[1].trim();
+      continue;
+    }
+    // コツ・ポイント・コラム行は除外（元サイトへの動機を残すため）
+    if (/^(?:【?(?:コツ|ポイント|アドバイス|コラム|エピソード)】?)/.test(line)) {
+      break;
+    }
+    if (/作り方|手順|【作り方】|〔作り方〕|＜作り方＞/.test(line)) {
+      inSteps = true;
+      normalizedLines.push('【作り方】');
+      continue;
+    }
+    if (inSteps) {
+      normalizedLines.push(formatStepAsConciseIndex(line, stepCounter));
+      stepCounter += 1;
+    } else {
+      normalizedLines.push(line);
+    }
+  }
+
+  return {
+    title: autoTitle,
+    creatorName: detectedCreator,
+    ogpTitle: apiMeta?.ogpTitle || null,
+    sourceUrl,
+    sourcePlatform,
+    isScrapedAllowed: true,
+    cookingTime: 15,
+    category: '主菜',
+    extractedText: normalizedLines.join('\n'),
+  };
+};
+
+// =============================================================
+// 要件3-4：YouTube / Instagram 公式埋め込み（Embed）URLの生成
+// =============================================================
+export const getOfficialEmbedInfo = (sourceUrl, sourcePlatform) => {
+  if (!sourceUrl || typeof sourceUrl !== 'string') return null;
+  let normalized = sourceUrl.trim();
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`;
+  }
+
+  const platform = sourcePlatform || detectSourcePlatform(normalized);
+
+  if (platform === 'youtube') {
+    try {
+      const u = new URL(normalized);
+      let videoId = null;
+      if (u.hostname.includes('youtu.be')) {
+        videoId = u.pathname.split('/').filter(Boolean)[0];
+      } else if (u.pathname.includes('/shorts/')) {
+        videoId = u.pathname.split('/shorts/')[1]?.split(/[/?#]/)[0];
+      } else if (u.pathname.includes('/embed/')) {
+        videoId = u.pathname.split('/embed/')[1]?.split(/[/?#]/)[0];
+      } else {
+        videoId = u.searchParams.get('v');
+      }
+      if (videoId) {
+        return {
+          platform: 'youtube',
+          id: videoId,
+          embedUrl: `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0`,
+          watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        };
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+
+  if (platform === 'instagram') {
+    try {
+      const u = new URL(normalized);
+      const match = u.pathname.match(/\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+      if (match) {
+        const type = match[1] === 'reels' ? 'reel' : match[1];
+        const shortcode = match[2];
+        return {
+          platform: 'instagram',
+          id: shortcode,
+          embedUrl: `https://www.instagram.com/${type}/${shortcode}/embed`,
+          watchUrl: `https://www.instagram.com/${type}/${shortcode}/`,
+        };
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+
+  return null;
+};
+
 export const categorizeIngredient = (text) => {
   const t = text.toLowerCase();
   if (/玉ねぎ|ねぎ|ネギ|キャベツ|白菜|人参|にんじん|大根|トマト|きゅうり|レタス|ピーマン|じゃがいも|さつまいも|なす|茄子|きのこ|しめじ|えのき|まいたけ|椎茸|ほうれん草|もやし|ニラ|生姜|しょうが|にんにく|ニンニク|アボカド|レモン|果物|りんご|バナナ|ブロッコリー|かぼちゃ|パプリカ|青じそ|大葉|ごぼう|里芋/.test(t)) {
