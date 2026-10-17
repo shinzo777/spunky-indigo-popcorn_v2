@@ -244,7 +244,10 @@ export const normalizeRecipeRecord = (recipe) => {
   const isScrapedAllowed =
     typeof recipe.isScrapedAllowed === 'boolean' ? recipe.isScrapedAllowed : true;
 
-  return {
+  
+  // 定番かどうかの判定。既存データは基本的に定番とする
+  const isStaple = typeof recipe.isStaple === 'boolean' ? recipe.isStaple : true;
+return {
     ...recipe,
     sourceUrl: rawSourceUrl,
     webUrl: rawSourceUrl,
@@ -252,6 +255,7 @@ export const normalizeRecipeRecord = (recipe) => {
     creatorName: creatorName || null,
     ogpTitle,
     isScrapedAllowed,
+    isStaple,
   };
 };
 
@@ -274,147 +278,6 @@ export const formatStepAsConciseIndex = (rawStep, index) => {
   }
 
   return `${prefix} ${cleaned}`;
-};
-
-export const parseAiExtractionResponse = (rawResponseText, sourceUrl = '', apiMeta = {}) => {
-  const sourcePlatform = detectSourcePlatform(sourceUrl);
-  const fallbackCreator = inferCreatorNameFromUrl(sourceUrl);
-
-  if (apiMeta && apiMeta.isScrapedAllowed === false) {
-    const fallbackTitle = apiMeta.ogpTitle || 'ブックマークしたレシピ';
-    return {
-      title: fallbackTitle,
-      creatorName: apiMeta.creatorName || fallbackCreator,
-      ogpTitle: apiMeta.ogpTitle || null,
-      sourceUrl,
-      sourcePlatform,
-      isScrapedAllowed: false,
-      cookingTime: 15,
-      category: '主菜',
-      extractedText: '',
-    };
-  }
-
-  if (!rawResponseText || typeof rawResponseText !== 'string') {
-    return null;
-  }
-
-  const jsonMatch = rawResponseText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const isScrapedAllowed =
-        typeof parsed.isScrapedAllowed === 'boolean' ? parsed.isScrapedAllowed : true;
-      const creatorName = parsed.creatorName || apiMeta?.creatorName || fallbackCreator || null;
-      const ogpTitle = parsed.ogpTitle || apiMeta?.ogpTitle || null;
-      const recipeTitle =
-        (parsed.title || ogpTitle || '無題のレシピ').replace(/[#*]/g, '').trim();
-
-      if (!isScrapedAllowed) {
-        return {
-          title: recipeTitle,
-          creatorName,
-          ogpTitle,
-          sourceUrl,
-          sourcePlatform,
-          isScrapedAllowed: false,
-          cookingTime: Number(parsed.cookingTime) || 15,
-          category: parsed.category || '主菜',
-          extractedText: '',
-        };
-      }
-
-      const ingLines = Array.isArray(parsed.ingredients)
-        ? parsed.ingredients
-            .map((ing) => {
-              if (typeof ing === 'string') {
-                return `・${ing.replace(/^[・\-\*•\s]+/, '').trim()}`;
-              }
-              const name = (ing?.name || '').trim();
-              const amount = (ing?.amount || '').trim();
-              const unit = (ing?.unit || '').trim();
-              if (!name) return null;
-              const qty = `${amount}${unit}`.trim();
-              return qty ? `・${name}：${qty}` : `・${name}`;
-            })
-            .filter(Boolean)
-        : [];
-
-      const stepLines = Array.isArray(parsed.steps)
-        ? parsed.steps
-            .map((step, idx) => formatStepAsConciseIndex(step, idx))
-            .filter(Boolean)
-        : [];
-
-      const formattedText = [
-        recipeTitle,
-        '【材料】（2人分）',
-        ...(ingLines.length > 0 ? ingLines : ['・材料情報は元レシピをご確認ください']),
-        '【作り方】',
-        ...(stepLines.length > 0 ? stepLines : ['① 詳しい手順は元レシピをご確認ください']),
-      ].join('\n');
-
-      return {
-        title: recipeTitle,
-        creatorName,
-        ogpTitle,
-        sourceUrl,
-        sourcePlatform,
-        isScrapedAllowed: true,
-        cookingTime: Number(parsed.cookingTime) || 15,
-        category: parsed.category || '主菜',
-        extractedText: formattedText,
-      };
-    } catch (e) {
-      // Fallback below
-    }
-  }
-
-  const lines = rawResponseText
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  const autoTitle = lines[0]?.replace(/[#*]/g, '').trim() || apiMeta?.ogpTitle || '無題のレシピ';
-
-  let detectedCreator = apiMeta?.creatorName || fallbackCreator || null;
-  const normalizedLines = [];
-  let inSteps = false;
-  let stepCounter = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const creatorMatch = line.match(/^(?:考案者|著者|作者|クリエイター|チャンネル名|アカウント)[：:]\s*(.+)$/);
-    if (creatorMatch) {
-      detectedCreator = creatorMatch[1].trim();
-      continue;
-    }
-    if (/^(?:【?(?:コツ|ポイント|アドバイス|コラム|エピソード)】?)/.test(line)) {
-      break;
-    }
-    if (/作り方|手順|【作り方】|〔作り方〕|＜作り方＞/.test(line)) {
-      inSteps = true;
-      normalizedLines.push('【作り方】');
-      continue;
-    }
-    if (inSteps) {
-      normalizedLines.push(formatStepAsConciseIndex(line, stepCounter));
-      stepCounter += 1;
-    } else {
-      normalizedLines.push(line);
-    }
-  }
-
-  return {
-    title: autoTitle,
-    creatorName: detectedCreator,
-    ogpTitle: apiMeta?.ogpTitle || null,
-    sourceUrl,
-    sourcePlatform,
-    isScrapedAllowed: true,
-    cookingTime: 15,
-    category: '主菜',
-    extractedText: normalizedLines.join('\n'),
-  };
 };
 
 export const getOfficialEmbedInfo = (sourceUrl, sourcePlatform) => {
@@ -690,3 +553,62 @@ export const processAssetForUpload = async (asset) => {
 
   return null;
 };
+
+// =============================================================
+// 今夜のメイン提案ロジック
+// =============================================================
+export const getDailyProposal = (recipes, history, skippedIds, requireEasy) => {
+  // 1. 定番の主菜をフィルタリング
+  let pool = recipes.filter(r => r.isStaple && r.category === '主菜');
+  
+  if (pool.length === 0) return null;
+
+  // 2. スキップされたIDを除外
+  let available = pool.filter(r => !skippedIds.includes(r.id));
+  if (available.length === 0) {
+    // 全てスキップされたらリセットして再抽選
+    available = pool;
+  }
+
+  // 3. 手軽さ指定（15分以内など）
+  if (requireEasy) {
+    const easyPool = available.filter(r => r.cookingTime && r.cookingTime <= 15);
+    if (easyPool.length > 0) {
+      available = easyPool;
+    }
+  }
+
+  // 4. スコアリング（最後に作ったのが古いほど高スコア）
+  const nowTime = new Date().getTime();
+  const scored = available.map(r => {
+    let score = 0;
+    // 最後に作った日
+    if (r.lastCookedAt) {
+      const daysSince = (nowTime - new Date(r.lastCookedAt).getTime()) / (1000 * 60 * 60 * 24);
+      score += daysSince; // 古いほどプラス
+    } else {
+      score += 30; // 作ったことがないものは30日相当のボーナス
+    }
+    // ランダム要素
+    score += Math.random() * 5; 
+    return { ...r, _score: score };
+  });
+
+  scored.sort((a, b) => b._score - a._score);
+  return scored[0] || null;
+};
+
+export const getProposalReason = (recipe) => {
+  if (!recipe.lastCookedAt) {
+    return 'まだ記録がありません。定番にしませんか？';
+  }
+  const daysSince = Math.floor((new Date().getTime() - new Date(recipe.lastCookedAt).getTime()) / (1000 * 60 * 60 * 24));
+  if (daysSince > 30) {
+    return 'ごぶさたメニューです（1ヶ月以上作っていません）';
+  } else if (daysSince > 14) {
+    return 'そろそろ食べたくなりませんか？';
+  } else {
+    return `前回調理：${daysSince}日前`;
+  }
+};
+

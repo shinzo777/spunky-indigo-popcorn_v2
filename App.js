@@ -36,7 +36,6 @@ import {
   PRESET_DEFAULT_RECIPES,
   NAV_ITEMS,
   SOURCE_PLATFORMS,
-  RECIPE_EXTRACTION_SYSTEM_PROMPT,
   WEEKDAY_LABELS,
   getSeasonIcon,
 } from './constants';
@@ -51,12 +50,13 @@ import {
   detectSourcePlatform,
   inferCreatorNameFromUrl,
   normalizeRecipeRecord,
-  parseAiExtractionResponse,
   parseStructuredRecipeSections,
   toDateKey,
   formatDateKeyJapanese,
   pruneCookingHistoryOneYear,
   generateCalendarMonthWeeks,
+  getDailyProposal,
+  getProposalReason,
 } from './helpers';
 
 import {
@@ -166,6 +166,12 @@ export default function App() {
   const [importUrlText, setImportUrlText] = useState('');
   const [isCookingCompleteModalVisible, setIsCookingCompleteModalVisible] = useState(false);
   const [completedRecipe, setCompletedRecipe] = useState(null);
+
+  // 今夜のメイン提案用ステート
+  const [skippedRecipeIds, setSkippedRecipeIds] = useState([]);
+  const [requireEasy, setRequireEasy] = useState(false);
+  const [searchQueryForWeb, setSearchQueryForWeb] = useState('');
+
 
   const [familyId, setFamilyId] = useState('');
   const [joinFamilyInput, setJoinFamilyInput] = useState('');
@@ -917,6 +923,65 @@ export default function App() {
     return pruneCookingHistoryOneYear(combined);
   }, [cookingHistory, allRecipes]);
 
+  
+  const handleWebSearch = () => {
+    if (!searchQueryForWeb.trim()) return;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(searchQueryForWeb.trim() + ' レシピ')}`;
+    openCreatorUrlInAppBrowser(url, theme.primary);
+  };
+
+  const proposedRecipe = useMemo(() => {
+    return getDailyProposal(allRecipes, mergedCookingHistory, skippedRecipeIds, requireEasy);
+  }, [allRecipes, mergedCookingHistory, skippedRecipeIds, requireEasy]);
+
+  const todayPlannedRecipes = useMemo(() => {
+    return allRecipes.filter((r) => r.plannedDateKey === todayDateKey);
+  }, [allRecipes, todayDateKey]);
+
+  const saveRecipeToCloudAndLocal = async (updated) => {
+    const normalized = normalizeRecipeRecord(updated);
+    if (selectedRecipe && selectedRecipe.id === normalized.id) {
+      setSelectedRecipe(normalized);
+    }
+    setCloudRecipes((prev) => {
+      const exists = prev.some((r) => r.id === normalized.id);
+      if (exists) {
+        return prev.map((r) => (r.id === normalized.id ? normalized : r));
+      }
+      return [...prev, normalized];
+    });
+
+    if (firestoreFamilyApiUrl) {
+      try {
+        const updateUrl = `${firestoreFamilyApiUrl}/${normalized.id}?updateMask.fieldPaths=data`;
+        await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: { data: { stringValue: JSON.stringify(normalized) } },
+          }),
+        });
+      } catch (e) {
+        console.log(e);
+      }
+    }
+  };
+
+  const handlePlanRecipe = async (recipe) => {
+    const updated = { ...recipe, plannedDateKey: todayDateKey };
+    await saveRecipeToCloudAndLocal(updated);
+  };
+
+  const handleUnplanRecipe = async (recipe) => {
+    const updated = { ...recipe, plannedDateKey: null };
+    await saveRecipeToCloudAndLocal(updated);
+  };
+
+  const handleToggleStaple = async (recipe) => {
+    const updated = { ...recipe, isStaple: !recipe.isStaple };
+    await saveRecipeToCloudAndLocal(updated);
+  };
+
   const historyByDateMap = useMemo(() => {
     const map = {};
     mergedCookingHistory.forEach((entry) => {
@@ -1084,59 +1149,10 @@ export default function App() {
     setSourceUrl(targetUrl);
     setSourcePlatform(detectedPlatform);
     setCreatorName(defaultCreator || '');
+    setTitle(defaultCreator ? `${defaultCreator}のレシピ` : '外部レシピ');
+    setIsScrapedAllowed(false);
     openSubViewSmoothly('edit');
-
-    setIsLoading(true);
-    setLoadingMessage('出典情報とレシピの要点インデックスを抽出中...');
-
-    try {
-      const response = await fetch(AI_PROXY_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-Token': APP_SECRET_TOKEN,
-        },
-        body: JSON.stringify({
-          webUrl: targetUrl,
-          sourceUrl: targetUrl,
-          sourcePlatform: detectedPlatform,
-          systemPrompt: RECIPE_EXTRACTION_SYSTEM_PROMPT,
-        }),
-      });
-
-      const json = await response.json();
-      if (!response.ok) {
-        throw new Error(json.error?.message || json.error || 'Webページの読み込みに失敗しました');
-      }
-
-      const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const parsedResult = parseAiExtractionResponse(rawText, targetUrl, json.meta);
-
-      if (parsedResult) {
-        setTitle(parsedResult.title);
-        setCreatorName(parsedResult.creatorName || defaultCreator || '');
-        setOgpTitle(parsedResult.ogpTitle || '');
-        setSourceUrl(targetUrl);
-        setSourcePlatform(parsedResult.sourcePlatform || detectedPlatform);
-        setIsScrapedAllowed(parsedResult.isScrapedAllowed);
-        setExtractedText(parsedResult.extractedText);
-        if (parsedResult.cookingTime) setCookingTime(parsedResult.cookingTime);
-        if (parsedResult.category) setCategory(parsedResult.category);
-        setFoodImageUri(null);
-      } else {
-        throw new Error('レシピ情報を読み取れませんでした');
-      }
-    } catch (e) {
-      setIsScrapedAllowed(false);
-      setTitle(defaultCreator ? `${defaultCreator}さんのレシピ` : 'ブックマークしたレシピ');
-      setExtractedText('');
-      const friendlyMsg = `本文抽出が制限されているため「ブックマークモード」に切り替えました。料理名を確認してそのまま保存できます。`;
-      Platform.OS === 'web' ? window.alert(friendlyMsg) : Alert.alert('ブックマークモード', friendlyMsg);
-    } finally {
-      setIsLoading(false);
-      setLoadingMessage('');
-      setImportUrlText('');
-    }
+    setImportUrlText('');
   };
 
   const handleExportJsonBackup = () => {
@@ -1635,6 +1651,27 @@ export default function App() {
                 </Text>
               </TouchableOpacity>
             ) : null}
+
+            <TouchableOpacity
+              style={[
+                styles.bigCookStartBtn,
+                {
+                  backgroundColor: normalizedRecipe.isStaple ? theme.cardBg : theme.primary,
+                  borderColor: theme.primaryBorder,
+                  borderWidth: normalizedRecipe.isStaple ? 1 : 0,
+                },
+              ]}
+              onPress={() => handleToggleStaple(normalizedRecipe)}
+            >
+              <Text
+                style={[
+                  styles.bigCookStartBtnText,
+                  { color: normalizedRecipe.isStaple ? theme.primary : '#FFF' },
+                ]}
+              >
+                {normalizedRecipe.isStaple ? '★ 定番に登録済み（タップで解除）' : '☆ 定番に追加する'}
+              </Text>
+            </TouchableOpacity>
 
             <View style={styles.smartActionBar}>
               <TouchableOpacity
@@ -2219,102 +2256,151 @@ export default function App() {
                 </TouchableOpacity>
               ) : null}
 
-              {/* 主役：今日のオススメ（最上部に配置） */}
+              {/* 最優先：今夜のメイン（献立が決定しているか、提案か） */}
               <View style={styles.homeSectionHeader}>
                 <View style={styles.homeSectionTitleRow}>
-                  <Ionicons name="sparkles-outline" size={16} color={theme.primary} style={{ marginRight: 5 }} />
-                  <Text style={styles.homeSectionTitle}>今日のおすすめ</Text>
+                  <Ionicons name="restaurant-outline" size={16} color={theme.primary} style={{ marginRight: 5 }} />
+                  <Text style={styles.homeSectionTitle}>今夜のメイン</Text>
                 </View>
               </View>
-              {recommendedStapleRecipe ? (
-                <View style={styles.homeRecommendCard}>
-                  <TouchableOpacity
-                    style={styles.homeRecommendLeft}
-                    activeOpacity={0.75}
-                    onPress={() => {
-                      setSelectedRecipe(recommendedStapleRecipe);
-                      setIsCookingMode(false);
-                      openSubViewSmoothly('detail');
-                    }}
-                  >
-                    <View style={styles.homeRecommendTagRow}>
-                      <Text style={styles.homeRecommendTag}>
-                        {topStarredRecipes.length > 0 ? 'わが家の定番' : 'おすすめ献立'}
-                        {recommendedStapleRecipe.cookingTime ? ` · 約${recommendedStapleRecipe.cookingTime}分` : ''}
-                      </Text>
-                    </View>
-                    <Text style={styles.homeRecommendTitle} numberOfLines={1}>
-                      {recommendedStapleRecipe.title}
-                    </Text>
-                    <Text style={styles.homeRecommendSub}>
-                      {recommendedStapleRecipe.lastCookedAt
-                        ? `前回: ${formatRelativeDate(recommendedStapleRecipe.lastCookedAt)}に調理`
-                        : '最近作っていないメニューです'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.homeRecommendBtn}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setSelectedRecipe(recommendedStapleRecipe);
-                      setIsCookingMode(false);
-                      openSubViewSmoothly('detail');
-                    }}
-                  >
-                    <Text style={styles.homeRecommendBtnText}>見る</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
 
-              {/* 今夜のリクエスト（空状態は1行のスリム枠に縮小） */}
-              {isRequestEnabled ? (
-                <>
-                  <View style={styles.homeSectionHeader}>
-                    <View style={styles.homeSectionTitleRow}>
-                      <Ionicons name="heart-outline" size={16} color={theme.textSub} style={{ marginRight: 5 }} />
-                      <Text style={styles.homeSectionTitle}>リクエスト</Text>
+              {todayPlannedRecipes.length > 0 ? (
+                <View style={styles.homeRecommendCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.homeRecommendTag}>今夜の献立予定</Text>
+                    {todayPlannedRecipes.map((r) => (
+                      <View key={r.id} style={{ marginBottom: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedRecipe(r);
+                            setIsCookingMode(false);
+                            openSubViewSmoothly('detail');
+                          }}
+                        >
+                          <Text style={styles.homeRecommendTitle} numberOfLines={1}>{r.title}</Text>
+                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                          <TouchableOpacity
+                            style={[styles.smartActionBtn, { borderColor: theme.primaryBorder, backgroundColor: theme.primaryLight, flex: 1 }]}
+                            onPress={() => handleMarkAsCookedToday(r)}
+                          >
+                            <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 13 }}>作った！</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.smartActionBtn, { flex: 1 }]}
+                            onPress={() => handleUnplanRecipe(r)}
+                          >
+                            <Text style={{ color: theme.textSub, fontSize: 13 }}>予定から外す</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : proposedRecipe ? (
+                <View style={styles.homeRecommendCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.homeRecommendTag}>
+                      定番からの提案{proposedRecipe.cookingTime ? ` · 約${proposedRecipe.cookingTime}分` : ''}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSelectedRecipe(proposedRecipe);
+                        setIsCookingMode(false);
+                        openSubViewSmoothly('detail');
+                      }}
+                    >
+                      <Text style={styles.homeRecommendTitle} numberOfLines={1}>{proposedRecipe.title}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.homeRecommendSub}>{getProposalReason(proposedRecipe)}</Text>
+
+                    <View style={{ flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                      <TouchableOpacity
+                        style={[styles.bigCookStartBtn, { marginBottom: 0 }]}
+                        onPress={() => handlePlanRecipe(proposedRecipe)}
+                      >
+                        <Text style={styles.bigCookStartBtnText}>今夜これにする</Text>
+                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          style={[styles.smartActionBtn, { flex: 1 }]}
+                          onPress={() => setSkippedRecipeIds([...skippedRecipeIds, proposedRecipe.id])}
+                        >
+                          <Text style={{ color: theme.textSub, fontSize: 12 }}>別の候補</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.smartActionBtn, { flex: 1 }]}
+                          onPress={() => {
+                            setRequireEasy(true);
+                            setSkippedRecipeIds([...skippedRecipeIds, proposedRecipe.id]);
+                          }}
+                        >
+                          <Text style={{ color: theme.textSub, fontSize: 12 }}>もっと手軽に</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
-                  {requestedCount > 0 ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                      {allRecipes
-                        .filter((r) => r.isRequested)
-                        .map((item) => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={[styles.horizontalCard, { borderColor: theme.primaryBorder }]}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                              setSelectedRecipe(item);
-                              setIsCookingMode(false);
-                              openSubViewSmoothly('detail');
-                            }}
-                          >
-                            {item.foodImageUri ? (
-                              <Image source={{ uri: item.foodImageUri }} style={styles.horizontalThumb} />
-                            ) : (
-                              <View style={[styles.horizontalThumb, styles.horizontalThumbPlaceholder]}>
-                                <Text style={{ fontSize: 22 }}>{getCategoryIcon(item.category)}</Text>
-                              </View>
-                            )}
-                            <View style={styles.horizontalCardBody}>
-                              <Text style={styles.horizontalCardTitle} numberOfLines={1}>{item.title}</Text>
-                              <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '600' }}>
-                                リクエスト中
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                  ) : (
-                    <View style={styles.homeEmptyCard}>
-                      <Text style={styles.homeEmptyCardSub}>
-                        現在リクエストはありません（レシピ詳細の「食べたい」から追加）
-                      </Text>
-                    </View>
-                  )}
-                </>
-              ) : null}
+                </View>
+              ) : (
+                <View style={styles.homeEmptyCard}>
+                  <Text style={styles.homeEmptyCardSub}>
+                    定番主菜がありません。レシピを追加して定番に設定してください。
+                  </Text>
+                </View>
+              )}
+
+              {/* 次点：定番を増やす（検索アシスト） */}
+              <View style={styles.homeSectionHeader}>
+                <View style={styles.homeSectionTitleRow}>
+                  <Ionicons name="search-outline" size={16} color={theme.textSub} style={{ marginRight: 5 }} />
+                  <Text style={styles.homeSectionTitle}>定番を増やす</Text>
+                </View>
+              </View>
+              <View style={[styles.formCard, { marginBottom: 12 }]}>
+                <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>
+                  日本の旬の目安や希望テーマから検索語を組み立て、外部サイトでレシピを探します。
+                </Text>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                  {currentSeasonalText.split('・').slice(0, 8).map((ing) => (
+                    <TouchableOpacity
+                      key={ing}
+                      style={[styles.categoryChip, { marginRight: 6 }]}
+                      onPress={() => setSearchQueryForWeb(`${ing} 主菜`)}
+                    >
+                      <Text style={styles.categoryChipText}>{ing}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <TouchableOpacity style={[styles.categoryChip, { marginRight: 6 }]} onPress={() => setSearchQueryForWeb('さっぱり 主菜')}>
+                    <Text style={styles.categoryChipText}>さっぱり</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.categoryChip, { marginRight: 6 }]} onPress={() => setSearchQueryForWeb('しっかり 主菜')}>
+                    <Text style={styles.categoryChipText}>しっかり</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.categoryChip, { marginRight: 6 }]} onPress={() => setSearchQueryForWeb('手軽 魚 主菜')}>
+                    <Text style={styles.categoryChipText}>手軽な魚の主菜</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.categoryChip, { marginRight: 6 }]} onPress={() => setSearchQueryForWeb('短時間 主菜')}>
+                    <Text style={styles.categoryChipText}>短時間</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    style={[styles.inputRegular, { flex: 1, marginBottom: 0 }]}
+                    value={searchQueryForWeb}
+                    onChangeText={setSearchQueryForWeb}
+                    placeholder="例: 鮭 きのこ 主菜"
+                    placeholderTextColor={theme.textMuted}
+                  />
+                  <TouchableOpacity style={[styles.addShoppingBtn, { paddingVertical: 9 }]} onPress={handleWebSearch}>
+                    <Text style={styles.addShoppingBtnText}>外部サイトで検索</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               {/* 直近の献立（空状態は1行のスリム枠に縮小） */}
               <View style={styles.homeSectionHeader}>
